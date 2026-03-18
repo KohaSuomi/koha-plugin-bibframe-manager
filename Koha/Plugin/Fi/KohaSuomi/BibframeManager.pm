@@ -1,4 +1,4 @@
-package Koha::Plugin::Fi::KohaSuomi::RdfTriple;
+package Koha::Plugin::Fi::KohaSuomi::BibframeManager;
 
 ## It's good practice to use Modern::Perl
 use Modern::Perl;
@@ -8,20 +8,23 @@ use base qw(Koha::Plugins::Base);
 ## We will also need to include any Koha libraries we want to access
 use C4::Context;
 use utf8;
+use JSON;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe;
 
 ## Here we set our plugin version
 our $VERSION = "1.0.0";
 
 ## Here is our metadata, some keys are required, some are optional
 our $metadata = {
-    name            => 'RDF triple store',
+    name            => 'Bibframe Manager',
     author          => 'Johanna Räisä',
     date_authored   => '2025-11-11',
     date_updated    => '2025-11-11',
     minimum_version => '25.05',
     maximum_version => '',
     version         => $VERSION,
-    description     => 'RDF triple store for Bibframe',
+    description     => 'Manage Bibframe metadata - convert MARC21 to Bibframe, store, retrieve, and export in multiple RDF formats',
 };
 
 ## This is the minimum code required for a plugin's 'new' method
@@ -40,6 +43,34 @@ sub new {
 
     return $self;
 }
+
+## The 'tool' method provides the UI for Bibframe record creation
+sub tool {
+    my ( $self, $args ) = @_;
+    my $cgi = $self->{'cgi'};
+
+    my $template = $self->get_template({ file => 'tool.tt' });
+    print $cgi->header(-charset => 'utf-8');
+    print $template->output();
+}
+
+## API routes configuration
+sub api_routes {
+    my ( $self, $args ) = @_;
+
+    my $spec_str = $self->mbf_read('openapi.json');
+    my $spec     = decode_json($spec_str);
+
+    return $spec;
+}
+
+## API namespace
+sub api_namespace {
+    my ( $self ) = @_;
+    
+    return 'kohasuomi';
+}
+
 ## This is the 'install' method. Any database tables or other setup that should
 ## be done when the plugin if first installed should be executed in this method.
 ## The installation method should always return true if the installation succeeded

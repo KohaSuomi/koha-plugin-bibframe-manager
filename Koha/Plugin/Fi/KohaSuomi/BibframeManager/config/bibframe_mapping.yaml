@@ -1,0 +1,867 @@
+# BFFI Mapping Configuration
+# Based on BFFI 1.0.0 ontology (https://schema.finto.fi/bffi/1-0-0/)
+#
+# This file contains comprehensive mappings between MARC21 fields and 
+# BFFI RDF properties following the LKD (Linkitetty kirjastodata) data model.
+
+# ===================================================================
+# NAMESPACES
+# ===================================================================
+namespaces:
+  bffi: 'http://urn.fi/URN:NBN:fi:schema:bffi:'
+  bffi-meta: 'http://urn.fi/URN:NBN:fi:schema:bffi-meta:'
+  bf: 'http://id.loc.gov/ontologies/bibframe/'
+  bflc: 'http://id.loc.gov/ontologies/bflc/'
+  rdfs: 'http://www.w3.org/2000/01/rdf-schema#'
+  rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
+  rdaw: 'http://rdaregistry.info/Elements/w/'
+  rdae: 'http://rdaregistry.info/Elements/e/'
+  rdam: 'http://rdaregistry.info/Elements/m/'
+  rdai: 'http://rdaregistry.info/Elements/i/'
+  rdac: 'http://rdaregistry.info/Elements/c/'
+  rdaa: 'http://rdaregistry.info/Elements/a/'
+  rdap: 'http://rdaregistry.info/Elements/p/'
+  dct: 'http://purl.org/dc/terms/'
+  skos: 'http://www.w3.org/2004/02/skos/core#'
+  owl: 'http://www.w3.org/2002/07/owl#'
+  xsd: 'http://www.w3.org/2001/XMLSchema#'
+
+# ===================================================================
+# BFFI CLASSES
+# ===================================================================
+classes:
+  # Core FRBR-LRM entities
+  Work: 'bffi:Work'
+  Expression: 'bffi:Expression'
+  Manifestation: 'bffi:Manifestation'
+  Item: 'bffi:Item'
+  
+  # Agent types
+  Agent: 'bffi:Agent'
+  Person: 'bffi:Person'
+  Family: 'bffi:Family'
+  Organization: 'bffi:Organization'
+  Meeting: 'bffi:Meeting'
+  Jurisdiction: 'bffi:Jurisdiction'
+  
+  # Work types
+  MonographWork: 'bffi:MonographWork'
+  SerialWork: 'bffi:SerialWork'
+  SeriesWork: 'bffi:SeriesWork'
+  AggregatingWork: 'bffi:AggregatingWork'
+  CollectionWork: 'bffi:CollectionWork'
+  CartographyWork: 'bffi:CartographyWork'
+  MusicWork: 'bffi:MusicWork'
+  MovingImageWork: 'bffi:MovingImageWork'
+  NonMusicAudioWork: 'bffi:NonMusicAudioWork'
+  Integrating: 'bffi:Integrating'
+  Manuscript: 'bffi:Manuscript'
+  
+  # Expression types
+  MonographExpression: 'bffi:MonographExpression'
+  SerialExpression: 'bffi:SerialExpression'
+  SeriesExpression: 'bffi:SeriesExpression'
+  AggregatingExpression: 'bffi:AggregatingExpression'
+  CollectionExpression: 'bffi:CollectionExpression'
+  CartographyExpression: 'bffi:CartographyExpression'
+  MusicAudioExpression: 'bffi:MusicAudioExpression'
+  MovingImageExpression: 'bffi:MovingImageExpression'
+  NonMusicAudioExpression: 'bffi:NonMusicAudioExpression'
+  Text: 'bffi:Text'
+  NotatedMusic: 'bffi:NotatedMusic'
+  NotatedMovement: 'bffi:NotatedMovement'
+  StillImage: 'bffi:StillImage'
+  Object: 'bffi:Object'
+  Dataset: 'bffi:Dataset'
+  Multimedia: 'bffi:Multimedia'
+  MixedMaterial: 'bffi:MixedMaterial'
+  Arrangement: 'bffi:Arrangement'
+  
+  # Manifestation types
+  CollectionManifestation: 'bffi:CollectionManifestation'
+  Print: 'bffi:Print'
+  Electronic: 'bffi:Electronic'
+  Microform: 'bffi:Microform'
+  Tactile: 'bffi:Tactile'
+  
+  # Identifier types
+  Identifier: 'bffi:Identifier'
+  Isbn: 'bffi:Isbn'
+  Issn: 'bffi:Issn'
+  Isni: 'bffi:Isni'
+  Orcid: 'bffi:Orcid'
+  Lccn: 'bffi:Lccn'
+  Fingerprint: 'bffi:Fingerprint'
+  Local: 'bffi:Local'
+  Urn: 'bffi:Urn'
+  Doi: 'bffi:Doi'
+  
+  # Title types
+  Title: 'bffi:Title'
+  ParallelTitle: 'bffi:ParallelTitle'
+  VariantTitle: 'bffi:VariantTitle'
+  AbbreviatedTitle: 'bffi:AbbreviatedTitle'
+  KeyTitle: 'bffi:KeyTitle'
+  SeriesTitle: 'bffi:SeriesTitle'
+  
+  # Provision Activity
+  ProvisionActivity: 'bffi:ProvisionActivity'
+  Publication: 'bffi:Publication'
+  Production: 'bffi:Production'
+  Distribution: 'bffi:Distribution'
+  Manufacture: 'bffi:Manufacture'
+  Copyright: 'bffi:Copyright'
+  
+  # Place and time
+  Place: 'bffi:Place'
+  GeographicCoverage: 'bffi:GeographicCoverage'
+  
+  # Subject types
+  Topic: 'bffi:Topic'
+  Genre: 'bffi:Genre'
+  GenreForm: 'bffi:GenreForm'
+  Temporal: 'bffi:Temporal'
+  Geographic: 'bffi:Geographic'
+  
+  # Content and carrier
+  Content: 'bffi:Content'
+  Media: 'bffi:Media'
+  Carrier: 'bffi:Carrier'
+  BaseMaterial: 'bffi:BaseMaterial'
+  AppliedMaterial: 'bffi:AppliedMaterial'
+  Mount: 'bffi:Mount'
+  ProductionMethod: 'bffi:ProductionMethod'
+  Generation: 'bffi:Generation'
+  Layout: 'bffi:Layout'
+  BookFormat: 'bffi:BookFormat'
+  FontSize: 'bffi:FontSize'
+  Polarity: 'bffi:Polarity'
+  SoundCharacteristic: 'bffi:SoundCharacteristic'
+  PlaybackChannels: 'bffi:PlaybackChannels'
+  RecordingMethod: 'bffi:RecordingMethod'
+  SpecialPlaybackCharacteristics: 'bffi:SpecialPlaybackCharacteristics'
+  VideoCharacteristic: 'bffi:VideoCharacteristic'
+  BroadcastStandard: 'bffi:BroadcastStandard'
+  VideoFormat: 'bffi:VideoFormat'
+  DigitalFileCharacteristic: 'bffi:DigitalFileCharacteristic'
+  EncodingFormat: 'bffi:EncodingFormat'
+  FileType: 'bffi:FileType'
+  FileSize: 'bffi:FileSize'
+  Resolution: 'bffi:Resolution'
+  RegionalEncoding: 'bffi:RegionalEncoding'
+  EncodedBitrate: 'bffi:EncodedBitrate'
+  ProjectedCharacteristic: 'bffi:ProjectedCharacteristic'
+  PresentationFormat: 'bffi:PresentationFormat'
+  ProjectionSpeed: 'bffi:ProjectionSpeed'
+  Color: 'bffi:Color'
+  AspectRatio: 'bffi:AspectRatio'
+  SoundContent: 'bffi:SoundContent'
+  Illustrative: 'bffi:Illustrative'
+  SupplementaryContent: 'bffi:SupplementaryContent'
+  ColorContent: 'bffi:ColorContent'
+  
+  # Contribution and role
+  Contribution: 'bffi:Contribution'
+  PrimaryContribution: 'bffi:PrimaryContribution'
+  Role: 'bffi:Role'
+  
+  # Awards and events
+  Award: 'bffi:Award'
+  
+  # Language
+  Language: 'bffi:Language'
+  
+  # Notes
+  Note: 'bffi:Note'
+  
+  # Series
+  Series: 'bffi:Series'
+  Subseries: 'bffi:Subseries'
+  
+  # Music specific
+  MusicFormat: 'bffi:MusicFormat'
+  MusicMedium: 'bffi:MusicMedium'
+  ChoreographicMedium: 'bffi:ChoreographicMedium'
+  Capture: 'bffi:Capture'
+  
+  # Notation
+  Notation: 'bffi:Notation'
+  MusicNotation: 'bffi:MusicNotation'
+  MovementNotation: 'bffi:MovementNotation'
+  TactileNotation: 'bffi:TactileNotation'
+  Script: 'bffi:Script'
+  
+  # Issuance and frequency
+  Issuance: 'bffi:Issuance'
+  ExtensionPlan: 'bffi:ExtensionPlan'
+  Frequency: 'bffi:Frequency'
+  PubFrequency: 'bffi:PubFrequency'
+  
+  # Access and usage
+  UsageAndAccessPolicy: 'bffi:UsageAndAccessPolicy'
+  AccessPolicy: 'bffi:AccessPolicy'
+  AgeLimit: 'bffi:AgeLimit'
+  UsePolicy: 'bffi:UsePolicy'
+  RetentionPolicy: 'bffi:RetentionPolicy'
+  
+  # Dissertation
+  Dissertation: 'bffi:Dissertation'
+  Degree: 'bffi:Degree'
+  
+  # Holdings
+  EnumerationAndChronology: 'bffi:EnumerationAndChronology'
+  Enumeration: 'bffi:Enumeration'
+  Chronology: 'bffi:Chronology'
+  ShelfMark: 'bffi:ShelfMark'
+  Sublocation: 'bffi:Sublocation'
+  
+  # Collection
+  CollectionArrangement: 'bffi:CollectionArrangement'
+  CollectionAccrualMethod: 'bffi:CollectionAccrualMethod'
+  CollectionAccrualPolicy: 'bffi:CollectionAccrualPolicy'
+  ImmediateAcquisition: 'bffi:ImmediateAcquisition'
+  AcquisitionSource: 'bffi:AcquisitionSource'
+  
+  # Audience and demographics
+  IntendedAudience: 'bffi:IntendedAudience'
+  DemographicGroup: 'bffi:DemographicGroup'
+  CreatorCharacteristic: 'bffi:CreatorCharacteristic'
+  
+  # Content summaries
+  Summary: 'bffi:Summary'
+  TableOfContents: 'bffi:TableOfContents'
+  
+  # Administrative
+  DescriptionConventions: 'bffi:DescriptionConventions'
+  DescriptionLevel: 'bffi:DescriptionLevel'
+  DescriptionAuthentication: 'bffi:DescriptionAuthentication'
+  EncodingLevel: 'bffi:EncodingLevel'
+  GenerationProcess: 'bffi:GenerationProcess'
+  RecordingSource: 'bffi:RecordingSource'
+  TitleSource: 'bffi:TitleSource'
+  Source: 'bffi:Source'
+  SourceConsulted: 'bffi:SourceConsulted'
+  MetadataLicensor: 'bffi:MetadataLicensor'
+  
+  # Copyright and legal
+  CopyrightRegistration: 'bffi:CopyrightRegistration'
+  
+  # Other
+  CoverArt: 'bffi:CoverArt'
+  Status: 'bffi:Status'
+  ReductionRatio: 'bffi:ReductionRatio'
+  Unit: 'bffi:Unit'
+  AppliesTo: 'bffi:AppliesTo'
+  Uncontrolled: 'bffi:Uncontrolled'
+  GovernmentPubType: 'bffi:GovernmentPubType'
+  SerialPubType: 'bffi:SerialPubType'
+  Kit: 'bffi:Kit'
+  MachineModel: 'bffi:MachineModel'
+  OperatingSystem: 'bffi:OperatingSystem'
+  ProgrammingLanguage: 'bffi:ProgrammingLanguage'
+  SystemRequirement: 'bffi:SystemRequirement'
+
+# ===================================================================
+# MARC21 TO WORK MAPPINGS
+# Work level properties - the abstract intellectual or artistic creation
+# ===================================================================
+marc21_to_work:
+  # Creator fields
+  '100':
+    property: 'bffi:contribution'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:numericDesignation'
+      c: 'bffi:qualifier'
+      d: 'bffi:date'
+      e: 'bffi:role'
+      q: 'bffi:qualifier'
+    type: 'bffi:Person'
+    rda_match: 'rdaw:P10065'
+  
+  '110':
+    property: 'bffi:contribution'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:qualifier'
+      c: 'bffi:place'
+      d: 'bffi:date'
+      e: 'bffi:role'
+    type: 'bffi:Organization'
+    rda_match: 'rdaw:P10066'
+  
+  '111':
+    property: 'bffi:contribution'
+    subproperties:
+      a: 'rdfs:label'
+      c: 'bffi:place'
+      d: 'bffi:date'
+      e: 'bffi:role'
+    type: 'bffi:Meeting'
+    rda_match: 'rdaw:P10067'
+  
+  # Title fields
+  '130':
+    property: 'bffi:title'
+    subproperties:
+      a: 'bffi:mainTitle'
+      f: 'bffi:originDate'
+      k: 'bffi:genreForm'
+      l: 'bffi:languageOfExpression'
+      n: 'bffi:partNumber'
+      p: 'bffi:partName'
+  
+  # Classification
+  '050':
+    property: 'bffi:classification'
+    subproperties:
+      a: 'bffi:classificationPortion'
+      b: 'bffi:itemPortion'
+  
+  '080':
+    property: 'bffi:classification'
+    subproperties:
+      a: 'bffi:classificationPortion'
+      b: 'bffi:itemPortion'
+  
+  '084':
+    property: 'bffi:classification'
+    subproperties:
+      a: 'bffi:classificationPortion'
+      '2': 'bffi:source'
+  
+  # Work characteristics
+  '380':
+    property: 'bffi:genreForm'
+    subproperties:
+      a: 'rdfs:label'
+      '2': 'bffi:source'
+    rda_match: 'rdaw:P10004'
+  
+  '381':
+    property: 'bffi:otherCharacteristics'
+    subproperties:
+      a: 'rdfs:label'
+      '2': 'bffi:source'
+  
+  '382':
+    property: 'bffi:musicMedium'
+    subproperties:
+      a: 'rdfs:label'
+      n: 'bffi:count'
+    rda_match: 'rdaw:P10219'
+  
+  '383':
+    property: 'bffi:numericDesignation'
+    subproperties:
+      a: 'rdfs:label'
+  
+  '384':
+    property: 'bffi:musicKey'
+    subproperties:
+      a: 'rdfs:label'
+    rda_match: 'rdaw:P10221'
+  
+  '385':
+    property: 'bffi:intendedAudienceOfRepresentativeExpression'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:code'
+      '2': 'bffi:source'
+    rda_match: 'rdaw:P10217'
+  
+  '386':
+    property: 'bffi:creatorCharacteristic'
+    subproperties:
+      a: 'rdfs:label'
+      '2': 'bffi:source'
+  
+  # Subject access
+  '600':
+    property: 'bffi:subject'
+    type: 'bffi:Person'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:numericDesignation'
+      c: 'bffi:qualifier'
+      d: 'bffi:date'
+      v: 'bffi:genreForm'
+      x: 'bffi:topic'
+      y: 'bffi:temporalCoverage'
+      z: 'bffi:geographicCoverage'
+    rda_match: 'rdaw:P10256'
+  
+  '610':
+    property: 'bffi:subject'
+    type: 'bffi:Organization'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:qualifier'
+      c: 'bffi:place'
+      d: 'bffi:date'
+      v: 'bffi:genreForm'
+      x: 'bffi:topic'
+      y: 'bffi:temporalCoverage'
+      z: 'bffi:geographicCoverage'
+    rda_match: 'rdaw:P10256'
+  
+  '611':
+    property: 'bffi:subject'
+    type: 'bffi:Meeting'
+    subproperties:
+      a: 'rdfs:label'
+      c: 'bffi:place'
+      d: 'bffi:date'
+      v: 'bffi:genreForm'
+      x: 'bffi:topic'
+      y: 'bffi:temporalCoverage'
+      z: 'bffi:geographicCoverage'
+    rda_match: 'rdaw:P10256'
+  
+  '630':
+    property: 'bffi:subject'
+    type: 'bffi:Work'
+    subproperties:
+      a: 'rdfs:label'
+      f: 'bffi:originDate'
+      k: 'bffi:genreForm'
+      l: 'bffi:languageOfExpression'
+      n: 'bffi:partNumber'
+      p: 'bffi:partName'
+      v: 'bffi:genreForm'
+      x: 'bffi:topic'
+      y: 'bffi:temporalCoverage'
+      z: 'bffi:geographicCoverage'
+    rda_match: 'rdaw:P10256'
+  
+  '648':
+    property: 'bffi:temporalCoverage'
+    subproperties:
+      a: 'rdfs:label'
+      v: 'bffi:genreForm'
+      x: 'bffi:topic'
+      y: 'bffi:temporalCoverage'
+      z: 'bffi:geographicCoverage'
+    rda_match: 'rdaw:P10322'
+  
+  '650':
+    property: 'bffi:subject'
+    type: 'bffi:Topic'
+    subproperties:
+      a: 'rdfs:label'
+      v: 'bffi:genreForm'
+      x: 'bffi:topic'
+      y: 'bffi:temporalCoverage'
+      z: 'bffi:geographicCoverage'
+      '2': 'bffi:source'
+    rda_match: 'rdaw:P10256'
+  
+  '651':
+    property: 'bffi:geographicCoverage'
+    subproperties:
+      a: 'rdfs:label'
+      v: 'bffi:genreForm'
+      x: 'bffi:topic'
+      y: 'bffi:temporalCoverage'
+      z: 'bffi:geographicCoverage'
+    rda_match: 'rdaw:P10321'
+  
+  '655':
+    property: 'bffi:genreForm'
+    subproperties:
+      a: 'rdfs:label'
+      '2': 'bffi:source'
+    rda_match: 'rdaw:P10004'
+
+# ===================================================================
+# MARC21 TO EXPRESSION MAPPINGS
+# Expression level properties - the specific intellectual realization
+# ===================================================================
+marc21_to_expression:
+  # Language
+  '041':
+    property: 'bffi:languageOfExpression'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:intermediateTranslationLanguage'
+      d: 'bffi:audioLanguage'
+      e: 'bffi:librettoLanguage'
+      f: 'bffi:tableOfContentsLanguage'
+      g: 'bffi:accompanyingLanguage'
+      h: 'bffi:originalLanguage'
+      j: 'bffi:subtitleLanguage'
+    rda_match: 'rdae:P20006'
+  
+  '130':
+    property: 'bffi:title'
+    subproperties:
+      a: 'bffi:mainTitle'
+      f: 'bffi:originDate'
+      k: 'bffi:genreForm'
+      l: 'bffi:languageOfExpression'
+      n: 'bffi:partNumber'
+      p: 'bffi:partName'
+  
+  '245':
+    property: 'bffi:title'
+    subproperties:
+      a: 'bffi:mainTitle'
+      b: 'bffi:subtitle'
+      c: 'bffi:responsibilityStatement'
+      n: 'bffi:partNumber'
+      p: 'bffi:partName'
+  
+  '250':
+    property: 'bffi:editionStatement'
+    subproperties:
+      a: 'bffi:editionEnumeration'
+      b: 'bffi:responsibilityStatement'
+    rda_match: 'rdae:P20002'
+  
+  '336':
+    property: 'bffi:content'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:code'
+      '2': 'bffi:source'
+    rda_match: 'rdae:P20001'
+  
+  '340':
+    property: 'bffi:note'
+    subproperties:
+      a: 'rdfs:label'
+  
+  '382':
+    property: 'bffi:musicMedium'
+    subproperties:
+      a: 'rdfs:label'
+      n: 'bffi:count'
+    rda_match: 'rdae:P20215'
+  
+  # Summary and contents
+  '500':
+    property: 'bffi:note'
+    subproperties:
+      a: 'rdfs:label'
+    rda_match: 'rdae:P20071'
+  
+  '505':
+    property: 'bffi:tableOfContents'
+    subproperties:
+      a: 'rdfs:label'
+      t: 'bffi:title'
+      r: 'bffi:responsibilityStatement'
+  
+  '520':
+    property: 'bffi:summary'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:note'
+  
+  '546':
+    property: 'bffi:languageOfExpression'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:notation'
+  
+  # Contributors (7XX)
+  '700':
+    property: 'bffi:contribution'
+    type: 'bffi:Person'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:numericDesignation'
+      c: 'bffi:qualifier'
+      d: 'bffi:date'
+      e: 'bffi:role'
+      q: 'bffi:qualifier'
+    rda_match: 'rdae:P20301'
+  
+  '710':
+    property: 'bffi:contribution'
+    type: 'bffi:Organization'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:qualifier'
+      c: 'bffi:place'
+      d: 'bffi:date'
+      e: 'bffi:role'
+  
+  '711':
+    property: 'bffi:contribution'
+    type: 'bffi:Meeting'
+    subproperties:
+      a: 'rdfs:label'
+      c: 'bffi:place'
+      d: 'bffi:date'
+      e: 'bffi:role'
+  
+  # Related works and expressions
+  '730':
+    property: 'bffi:relatedWork'
+    subproperties:
+      a: 'rdfs:label'
+      f: 'bffi:originDate'
+      k: 'bffi:genreForm'
+      l: 'bffi:languageOfExpression'
+      n: 'bffi:partNumber'
+      p: 'bffi:partName'
+  
+  '740':
+    property: 'bffi:variantTitle'
+    subproperties:
+      a: 'rdfs:label'
+      n: 'bffi:partNumber'
+      p: 'bffi:partName'
+
+# ===================================================================
+# MARC21 TO MANIFESTATION MAPPINGS
+# Manifestation level properties - the physical embodiment
+# ===================================================================
+marc21_to_manifestation:
+  # Identifiers
+  '020':
+    property: 'bffi:identifier'
+    type: 'bffi:Isbn'
+    subproperties:
+      a: 'rdfs:label'
+      q: 'bffi:qualifier'
+    rda_match: 'rdam:P30004'
+  
+  '022':
+    property: 'bffi:identifier'
+    type: 'bffi:Issn'
+    subproperties:
+      a: 'rdfs:label'
+    rda_match: 'rdam:P30005'
+  
+  '024':
+    property: 'bffi:identifier'
+    subproperties:
+      a: 'rdfs:label'
+      '2': 'bffi:source'
+  
+  '028':
+    property: 'bffi:publisherNumber'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:publisher'
+  
+  # Publication information
+  '260':
+    property: 'bffi:provisionActivity'
+    type: 'bffi:Publication'
+    subproperties:
+      a: 'bffi:place'
+      b: 'bffi:agentName'
+      c: 'bffi:date'
+    rda_match: 'rdam:P30176'
+  
+  '264':
+    property: 'bffi:provisionActivity'
+    subproperties:
+      a: 'bffi:place'
+      b: 'bffi:agentName'
+      c: 'bffi:date'
+    rda_match: 'rdam:P30176'
+  
+  # Physical description
+  '300':
+    property: 'bffi:extent'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:otherPhysicalDetails'
+      c: 'bffi:dimensions'
+      e: 'bffi:accompanyingMaterial'
+    rda_match: 'rdam:P30182'
+  
+  '337':
+    property: 'bffi:media'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:code'
+      '2': 'bffi:source'
+    rda_match: 'rdam:P30002'
+  
+  '338':
+    property: 'bffi:carrier'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:code'
+      '2': 'bffi:source'
+    rda_match: 'rdam:P30001'
+  
+  # Series
+  '490':
+    property: 'bffi:series'
+    subproperties:
+      a: 'rdfs:label'
+      v: 'bffi:seriesEnumeration'
+  
+  '830':
+    property: 'bffi:series'
+    subproperties:
+      a: 'rdfs:label'
+      v: 'bffi:seriesEnumeration'
+      n: 'bffi:partNumber'
+      p: 'bffi:partName'
+  
+  # Notes
+  '500':
+    property: 'bffi:note'
+    subproperties:
+      a: 'rdfs:label'
+  
+  '502':
+    property: 'bffi:dissertation'
+    type: 'bffi:Dissertation'
+    subproperties:
+      a: 'rdfs:label'
+      b: 'bffi:degree'
+      c: 'bffi:grantingInstitution'
+      d: 'bffi:date'
+  
+  '504':
+    property: 'bffi:note'
+    subproperties:
+      a: 'rdfs:label'
+  
+  # Electronic location
+  '856':
+    property: 'bffi:electronicLocation'
+    subproperties:
+      u: 'rdfs:label'
+      y: 'bffi:note'
+      z: 'bffi:note'
+      '3': 'bffi:materials'
+
+# ===================================================================
+# MARC21 TO ITEM MAPPINGS
+# Item level properties - the physical copy
+# ===================================================================
+marc21_to_item:
+  '852':
+    property: 'bffi:heldBy'
+    subproperties:
+      a: 'bffi:location'
+      b: 'bffi:sublocation'
+      c: 'bffi:shelfLocation'
+      h: 'bffi:classificationPart'
+      i: 'bffi:itemPart'
+      j: 'bffi:shelfMark'
+      k: 'bffi:callNumberPrefix'
+      l: 'bffi:shelvingForm'
+      m: 'bffi:callNumberSuffix'
+      t: 'bffi:copyNumber'
+      x: 'bffi:note'
+    rda_match: 'rdai:P40018'
+  
+  '866':
+    property: 'bffi:enumerationAndChronology'
+    type: 'bffi:EnumerationAndChronology'
+    subproperties:
+      a: 'rdfs:label'
+      z: 'bffi:note'
+    rda_match: 'rdai:P40019'
+  
+  '876':
+    property: 'bffi:itemSpecificNote'
+    subproperties:
+      a: 'rdfs:label'
+      j: 'bffi:temporaryLocation'
+      p: 'bffi:pieceDesignation'
+      t: 'bffi:copyNumber'
+      z: 'bffi:note'
+    rda_match: 'rdai:P40026'
+
+# ===================================================================
+# ADMINISTRATIVE METADATA MAPPINGS
+# ===================================================================
+admin_metadata:
+  '040':
+    property: 'bffi:adminMetadata'
+    subproperties:
+      a: 'bffi:descriptionModifier'
+      b: 'bffi:descriptionLanguage'
+      c: 'bffi:descriptionModifier'
+      d: 'bffi:descriptionModifier'
+      e: 'bffi:descriptionConventions'
+  
+  Leader:
+    '05':
+      property: 'bffi:status'
+      mapping:
+        a: 'Increase'
+        c: 'Corrected'
+        d: 'Deleted'
+        'n': 'New'
+        p: 'Increase'
+    '17':
+      property: 'bffi:encodingLevel'
+      mapping:
+        ' ': 'Full'
+        '1': 'Full, not examined'
+        '2': 'Less-than-full'
+        '3': 'Abbreviated'
+        '4': 'Core'
+        '5': 'Partial'
+        '7': 'Minimal'
+        '8': 'Pre-publication'
+        u: 'Unknown'
+        z: 'NotApplicable'
+
+# ===================================================================
+# CARTOGRAPHIC MAPPINGS
+# ===================================================================
+cartographic_fields:
+  '034':
+    property: 'bffi:cartographicAttributes'
+    type: 'bffi:Cartographic'
+    subproperties:
+      a: 'bffi:scaleDesignation'
+      b: 'bffi:horizontalScale'
+      c: 'bffi:verticalScale'
+      d: 'bffi:coordinates'
+      e: 'bffi:coordinates'
+      f: 'bffi:coordinates'
+      g: 'bffi:coordinates'
+  
+  '255':
+    property: 'bffi:cartographicAttributes'
+    type: 'bffi:Cartographic'
+    subproperties:
+      a: 'bffi:scale'
+      b: 'bffi:cartographicProjection'
+      c: 'bffi:coordinates'
+
+# ===================================================================
+# RELATIONSHIPS
+# Core FRBR-LRM relationships
+# ===================================================================
+relationships:
+  # Work <-> Expression
+  hasExpression: 'bffi:hasExpression'
+  expressionOf: 'bffi:expressionOf'
+  hasRepresentativeExpression: 'bffi:hasRepresentativeExpression'
+  representativeExpressionOf: 'bffi:representativeExpressionOf'
+  
+  # Expression <-> Manifestation
+  manifestationOfExpression: 'bffi:manifestationOfExpression'
+  expressionManifested: 'bffi:expressionManifested'
+  
+  # Work <-> Manifestation
+  manifestationOfWork: 'bffi:manifestationOfWork'
+  workManifested: 'bffi:workManifested'
+  
+  # Manifestation <-> Item
+  itemOf: 'bffi:itemOf'
+  hasItem: 'bffi:hasItem'
+  
+  # Work <-> Work
+  partOf: 'bffi:partOf'
+  hasPart: 'bffi:hasPart'
+  relatedWork: 'bffi:relatedWork'
+  
+  # Agent relationships
+  contributor: 'bffi:contributor'
+  creator: 'bffi:creator'

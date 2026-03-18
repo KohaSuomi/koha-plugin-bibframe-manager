@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PM_FILE="Koha/Plugin/Fi/KohaSuomi/RdfTriple.pm"
+PM_FILE="Koha/Plugin/Fi/KohaSuomi/BibframeManager.pm"
 VERSION=`grep -oE "\-?[0-9]+\.[0-9]+\.[0-9]" $PM_FILE | head -1`
 MINVERSION=`grep -oE "\-?[0-9]+\.[0-9][0-9]" $PM_FILE | head -1`
 CURRENT_BRANCH=`git rev-parse --abbrev-ref HEAD`
