@@ -1,5 +1,7 @@
 // Pinia Store for Bibframe Manager
 const { defineStore } = Pinia;
+import { usePluginApi } from '../composables/api.js';
+import { propertySuggestions, relationships } from '../config/property-suggestions.js';
 
 export const useBibframeStore = defineStore('bibframe', {
     state: () => ({
@@ -13,54 +15,28 @@ export const useBibframeStore = defineStore('bibframe', {
         generatedOutput: null,
         allTriples: [],
         
-        // Property suggestions for each entity type
-        propertySuggestions: {
-            work: [
-                { label: 'creator', value: 'bffi:creator' },
-                { label: 'preferredTitle', value: 'bffi:preferredTitle' },
-                { label: 'formOfWork', value: 'bffi:formOfWork' },
-                { label: 'subject', value: 'bffi:subject' },
-                { label: 'genreForm', value: 'bffi:genreForm' },
-                { label: 'intendedAudience', value: 'bffi:intendedAudience' },
-                { label: 'medium', value: 'bffi:medium' },
-                { label: 'musicalKey', value: 'bffi:musicalKey' },
-                { label: 'temporalCoverage', value: 'bffi:temporalCoverage' },
-                { label: 'place', value: 'bffi:place' }
-            ],
-            expression: [
-                { label: 'title', value: 'bffi:title' },
-                { label: 'language', value: 'bffi:language' },
-                { label: 'edition', value: 'bffi:edition' },
-                { label: 'contentType', value: 'bffi:contentType' },
-                { label: 'contributor', value: 'bffi:contributor' },
-                { label: 'note', value: 'bffi:note' },
-                { label: 'tableOfContents', value: 'bffi:tableOfContents' },
-                { label: 'languageNote', value: 'bffi:languageNote' },
-                { label: 'date', value: 'bffi:date' }
-            ],
-            manifestation: [
-                { label: 'isbn', value: 'bffi:isbn' },
-                { label: 'issn', value: 'bffi:issn' },
-                { label: 'publication', value: 'bffi:publication' },
-                { label: 'extent', value: 'bffi:extent' },
-                { label: 'mediaType', value: 'bffi:mediaType' },
-                { label: 'carrierType', value: 'bffi:carrierType' },
-                { label: 'electronicLocation', value: 'bffi:electronicLocation' },
-                { label: 'identifiedBy', value: 'bffi:identifiedBy' },
-                { label: 'seriesStatement', value: 'bffi:seriesStatement' },
-                { label: 'physicalCharacteristic', value: 'bffi:physicalCharacteristic' }
-            ],
-            item: [
-                { label: 'heldBy', value: 'bffi:heldBy' },
-                { label: 'itemInformation', value: 'bffi:itemInformation' },
-                { label: 'enumerationAndChronology', value: 'bffi:enumerationAndChronology' }
-            ]
-        }
+        // Property suggestions for each entity type (from bibframe_mapping.yaml)
+        propertySuggestions: propertySuggestions,
+        
+        // All available relationships
+        relationships: relationships
     }),
     
     getters: {
         getPropertySuggestions: (state) => (entityType) => {
             return state.propertySuggestions[entityType] || [];
+        },
+        
+        // Get only property suggestions (non-relationships)
+        getPropertyOnly: (state) => (entityType) => {
+            const suggestions = state.propertySuggestions[entityType] || [];
+            return suggestions.filter(s => s.type === 'property');
+        },
+        
+        // Get only relationship suggestions
+        getRelationshipSuggestions: (state) => (entityType) => {
+            const suggestions = state.propertySuggestions[entityType] || [];
+            return suggestions.filter(s => s.type === 'relationship');
         },
         
         hasEntities: (state) => state.entities.length > 0,
@@ -120,6 +96,87 @@ export const useBibframeStore = defineStore('bibframe', {
                 this.success = `Please add a ${entityType} entity first`;
                 setTimeout(() => { this.success = null; }, 2000);
             }
+        },
+
+        async convertRecord(biblionumber) {
+            try {
+                const { convertRecordToBibframe } = usePluginApi();
+                const converted = await convertRecordToBibframe(biblionumber, this.outputFormat);
+                
+                // Populate entities from the triplets
+                if (converted.triples && converted.triples.length > 0) {
+                    this.populateEntitiesFromTriples(converted.triples);
+                    this.recordId = biblionumber;
+                    this.generatedOutput = converted.formatted;
+                    this.allTriples = converted.triples.map((t, i) => ({ ...t, id: i }));
+                    this.success = converted.message || 'Record converted successfully';
+                }
+            } catch (err) {
+                this.error = err.message || 'Failed to load record';
+            }
+        },
+        
+        populateEntitiesFromTriples(triples) {
+            // Clear existing entities
+            this.entities = [];
+            
+            // Group triples by subject
+            const groupedBySubject = {};
+            triples.forEach(triple => {
+                if (!groupedBySubject[triple.subject]) {
+                    groupedBySubject[triple.subject] = [];
+                }
+                groupedBySubject[triple.subject].push(triple);
+            });
+            
+            // Create entities from grouped triples
+            Object.keys(groupedBySubject).forEach(subjectUri => {
+                const subjectTriples = groupedBySubject[subjectUri];
+                
+                // Find the rdf:type triple to determine entity type
+                const typeTriple = subjectTriples.find(t => t.predicate === 'rdf:type');
+                if (!typeTriple) return; // Skip if no type found
+                
+                // Extract entity type from bffi:Work, bffi:Expression, etc.
+                const typeMatch = typeTriple.object.match(/bffi:(\w+)/);
+                if (!typeMatch) return;
+                
+                const entityType = typeMatch[1].toLowerCase();
+                
+                // Create new entity
+                const entity = {
+                    type: entityType,
+                    uri: subjectUri,
+                    properties: [],
+                    relationships: []
+                };
+                
+                // Process all triples for this subject
+                subjectTriples.forEach(triple => {
+                    // Skip rdf:type as it's already used to determine entity type
+                    if (triple.predicate === 'rdf:type') return;
+                    
+                    // Check if it's a relationship (URI) or property (literal)
+                    if (triple.object_type === 'uri') {
+                        // It's a relationship
+                        entity.relationships.push({
+                            predicate: triple.predicate,
+                            customPredicate: '',
+                            targetUri: triple.object
+                        });
+                    } else {
+                        // It's a property
+                        entity.properties.push({
+                            predicate: triple.predicate,
+                            customPredicate: '',
+                            object: triple.object,
+                            objectType: triple.object_type || 'literal'
+                        });
+                    }
+                });
+                
+                this.entities.push(entity);
+            });
         },
         
         setError(message) {
@@ -201,6 +258,8 @@ export const useBibframeStore = defineStore('bibframe', {
                 this.generatedOutput = this.formatAsJsonLd(triples);
             } else if (this.outputFormat === 'ntriples') {
                 this.generatedOutput = this.formatAsNTriples(triples);
+            } else if (this.outputFormat === 'rdf-xml') {
+                this.generatedOutput = this.formatRDFXML(triples);
             } else {
                 this.generatedOutput = JSON.stringify(triples, null, 2);
             }
@@ -265,6 +324,78 @@ export const useBibframeStore = defineStore('bibframe', {
                 const obj = t.objectType === 'uri' ? `<${t.object}>` : `"${t.object}"`;
                 output += `<${t.subject}> <${t.predicate}> ${obj} .\n`;
             });
+            return output;
+        },
+
+        formatRDFXML(triples) {
+            // Helper function to escape XML special characters
+            const escapeXml = (str) => {
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&apos;');
+            };
+            
+            // Helper function to extract namespace prefix and local name
+            const splitPredicate = (predicate) => {
+                if (predicate.includes(':')) {
+                    const [prefix, localName] = predicate.split(':');
+                    return { prefix, localName };
+                }
+                return { prefix: 'rdf', localName: predicate };
+            };
+            
+            // Start XML document
+            let output = '<?xml version="1.0" encoding="utf-8"?>\n';
+            output += '<rdf:RDF\n';
+            output += '   xmlns:bffi="http://urn.fi/URN:NBN:fi:schema:bffi:"\n';
+            output += '   xmlns:bf="http://id.loc.gov/ontologies/bibframe/"\n';
+            output += '   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"\n';
+            output += '   xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">\n';
+            
+            // Group triples by subject
+            const groupedTriples = {};
+            triples.forEach(t => {
+                if (!groupedTriples[t.subject]) {
+                    groupedTriples[t.subject] = [];
+                }
+                groupedTriples[t.subject].push(t);
+            });
+            
+            // Generate RDF/XML for each subject
+            Object.keys(groupedTriples).forEach(subject => {
+                const {object} = groupedTriples[subject].find(t => t.predicate === 'rdf:type') || {};
+                const entityType = object ? object : 'rdf:Description';
+                output += `  <${entityType} rdf:about="${escapeXml(subject)}">\n`;
+                const filteredTriples = groupedTriples[subject].filter(t => t.predicate !== 'rdf:type');
+                
+                filteredTriples.forEach(triple => {
+                    const { prefix, localName } = splitPredicate(triple.predicate);
+                    
+                    if (triple.objectType === 'uri') {
+                        // For URI objects, use rdf:resource attribute
+                        output += `    <${prefix}:${localName} rdf:resource="${escapeXml(triple.object)}"/>\n`;
+                    } else {
+                        // For literal objects, use element content
+                        // Check if object has language tag
+                        const langMatch = triple.object.match(/^"(.+)"@(\w+)$/);
+                        if (langMatch) {
+                            output += `    <${prefix}:${localName} xml:lang="${langMatch[2]}">${escapeXml(langMatch[1])}</${prefix}:${localName}>\n`;
+                        } else {
+                            // Clean quotes if present
+                            const cleanObject = triple.object.replace(/^"(.+)"$/, '$1');
+                            output += `    <${prefix}:${localName}>${escapeXml(cleanObject)}</${prefix}:${localName}>\n`;
+                        }
+                    }
+                });
+                
+                output += `  </${entityType}>\n`;
+            });
+            
+            output += '</rdf:RDF>\n';
+            
             return output;
         },
         

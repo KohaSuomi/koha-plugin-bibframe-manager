@@ -8,6 +8,7 @@ use Koha::Biblios;
 use MARC::Record;
 use MARC::File::USMARC;
 use MARC::File::XML;
+use MIME::Base64;
 use Try::Tiny;
 use JSON;
 
@@ -32,10 +33,12 @@ sub add {
     my $c = shift->openapi->valid_input or return;
 
     return try {
-        
-        my $triples = $c->param('triples');
-        my $format = $c->param('format') || 'turtle';
-        my $schema = $c->param('schema') || 'Bibframe';
+        # Get parameters from JSON body
+        my $body = $c->validation->output;
+        my $biblionumber = $body->{biblionumber};
+        my $triples = $body->{triples};
+        my $format = $body->{format} || 'turtle';
+        my $schema = $body->{schema} || 'Bibframe';
 
         unless ($biblionumber && $triples) {
             return $c->render(
@@ -82,17 +85,19 @@ sub convert {
     my $c = shift->openapi->valid_input or return;
 
     return try {
-        my $method = $c->param('method') || 'biblio';
-        my $base_uri = $c->param('base_uri') || 'http://urn.fi/URN:NBN:fi:bib:';
-        my $format = $c->param('format') || 'turtle';
-        my $save_to_db = $c->param('save_to_db') || 0;
+        # Get parameters from JSON body
+        my $body = $c->req->json;
+        my $method = $body->{method} || 'biblio';
+        my $base_uri = $body->{base_uri} || 'http://urn.fi/URN:NBN:fi:bib:';
+        my $format = $body->{format} || 'turtle';
+        my $save_to_db = $body->{save_to_db} || 0;
         
         my $marc_record;
         my $biblionumber;
 
         # Get MARC record based on input method
         if ($method eq 'biblio') {
-            $biblionumber = $c->param('biblionumber');
+            $biblionumber = $body->{biblionumber};
             unless ($biblionumber) {
                 return $c->render(
                     status => 400,
@@ -111,16 +116,18 @@ sub convert {
             $marc_record = $biblio->metadata->record;
             
         } elsif ($method eq 'marc') {
-            # Handle file upload
-            my $upload = $c->req->upload('marc_file');
-            unless ($upload) {
+            # Handle base64 encoded MARC file from JSON body
+            my $marc_file_b64 = $body->{marc_file};
+            unless ($marc_file_b64) {
                 return $c->render(
                     status => 400,
-                    openapi => { error => 'MARC file is required' }
+                    openapi => { error => 'MARC file (base64 encoded) is required' }
                 );
             }
 
-            my $marc_data = $upload->slurp;
+            # Decode base64
+            require MIME::Base64;
+            my $marc_data = MIME::Base64::decode_base64($marc_file_b64);
             $marc_record = eval { MARC::Record->new_from_usmarc($marc_data) };
             
             if ($@) {
@@ -131,7 +138,7 @@ sub convert {
             }
             
         } elsif ($method eq 'text') {
-            my $marc_text = $c->param('marc_text');
+            my $marc_text = $body->{marc_text};
             unless ($marc_text) {
                 return $c->render(
                     status => 400,
@@ -183,21 +190,10 @@ sub convert {
         # Format the output
         my $formatted_output;
         my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
-        
-        if ($format eq 'turtle') {
-            $formatted_output = $db->formatAsTurtle($triples);
-        } elsif ($format eq 'json-ld') {
-            $formatted_output = $db->formatAsJsonLd($triples);
-        } elsif ($format eq 'ntriples') {
-            $formatted_output = $db->formatAsNTriples($triples);
-        } elsif ($format eq 'rdf-xml') {
-            $formatted_output = $db->formatAsRdfXml($triples);
-        } else {
-            $formatted_output = $db->formatAsTurtle($triples);
-        }
+        my $formatted_output = $db->serializeTriples($triples, $format);
 
         # Save to database if requested
-        my $metadata_id;
+        my $metadata_id = 0;
         if ($save_to_db && $biblionumber) {
             $metadata_id = $db->saveBibframeMetadata(
                 $biblionumber,
@@ -211,7 +207,6 @@ sub convert {
         return $c->render(
             status => 200,
             openapi => {
-                success => JSON::true,
                 triples => $triples,
                 formatted => $formatted_output,
                 format => $format,

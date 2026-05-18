@@ -344,23 +344,77 @@ sub _map_level_with_mapping {
     my ($self, $marc_record, $subject_uri, $level, $field_hash) = @_;
     my @triples;
     
-    # Get the appropriate mapping based on level
-    my $mapping_func = "get_${level}_mapping";
+    # Get the appropriate mapping function based on level
+    my %mapping_funcs = (
+        work          => \&Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_work_mapping,
+        expression    => \&Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_expression_mapping,
+        manifestation => \&Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_manifestation_mapping,
+        item          => \&Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_item_mapping,
+    );
+    
+    my $mapping_func = $mapping_funcs{$level};
+    unless ($mapping_func) {
+        warn "No mapping function found for level: $level";
+        return \@triples;
+    }
     
     foreach my $field ($marc_record->fields()) {
         my $tag = $field->tag();
         next unless exists $field_hash->{$tag};
         
-        my $mapping = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping->can($mapping_func)
-            ? Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping->$mapping_func($tag)
-            : undef;
-        
+        my $mapping = $mapping_func->($tag);
         next unless $mapping;
         
         # Handle the main property
         my $property = $mapping->{property};
         my $object_type = $mapping->{type};
         my $subproperties = $mapping->{subproperties} || {};
+        
+        # Skip if no property defined
+        next unless $property;
+        
+        # Check if this field maps to an external authority (subjects, agents)
+        # Fields 6XX and 7XX often reference external authorities
+        my $is_authority_field = ($tag =~ /^(6\d\d|7[0-7]\d)$/);
+        
+        # Build a property node URI from the field data
+        my $node_label = '';
+        foreach my $subfield ($field->subfields()) {
+            my ($code, $value) = @$subfield;
+            # Use main subfields (a, b, c) for URI construction
+            if ($code =~ /^[abc]$/ && $value) {
+                $node_label .= $value . '_';
+            }
+        }
+        
+        $node_label = 'node' unless $node_label; # Fallback if no suitable subfields
+
+        # Sanitize: replace problematic characters
+        $node_label =~ s/[\s,\.;:]+/_/g;
+        $node_label =~ s/[^\w:\/\-_.]/_/g;
+        $node_label =~ s/_+/_/g; # Collapse multiple underscores
+        $node_label =~ s/_$//; # Remove trailing underscore
+        
+        # Create a sanitized URI-safe node identifier
+        my $property_node_uri = $subject_uri . '_' . $tag . '_' . $node_label;
+        
+        # Link subject to the property node
+        push @triples, {
+            subject     => $subject_uri,
+            predicate   => $property,
+            object      => $property_node_uri,
+            object_type => 'uri',
+        };
+        
+        # Add type declaration if specified
+        if ($object_type) {
+            push @triples, {
+                subject     => $property_node_uri,
+                predicate   => 'rdf:type',
+                object      => $object_type,
+                object_type => 'uri',
+            };
+        }
         
         # Process subfields according to mapping
         foreach my $subfield ($field->subfields()) {
@@ -371,11 +425,28 @@ sub _map_level_with_mapping {
             next unless $subproperty;
             
             # Determine if this should be a resource or literal
-            my $is_uri = ($subproperty =~ /^bffi:(place|agent|subject|work|expression|manifestation|item)/ ||
-                         $code eq '2' || $code eq 'e'); # Source and role are often URIs
+            my $is_uri = 0;
             
+            # Check if the subproperty indicates a URI relationship
+            if ($subproperty =~ /^bffi:(place|agent|subject|work|expression|manifestation|item)$/) {
+                $is_uri = 1;
+            }
+            # Role should be URI (to vocabulary like http://id.loc.gov/vocabulary/relators/XXX)
+            elsif ($subproperty =~ /^bffi:role$/ || $subproperty =~ /^bf:role$/) {
+                $is_uri = 1;
+            }
+            # Source (subfield 2) should be URI (to vocabulary/scheme)
+            elsif ($subproperty =~ /^bffi:source$/ || $subproperty =~ /^bf:source$/ || $code eq '2') {
+                $is_uri = 1;
+            }
+            # Check for other RDA/BF properties that indicate relationships
+            elsif ($subproperty =~ /^(rdaw|rdae|rdam|rdai|bf):(agent|creator|contributor|publisher|manufacturer)/) {
+                $is_uri = 1;
+            }
+            
+            # Attach subproperties to the property node, not the main subject
             push @triples, {
-                subject     => $subject_uri,
+                subject     => $property_node_uri,
                 predicate   => $subproperty,
                 object      => $value,
                 object_type => $is_uri ? 'uri' : 'literal',
@@ -423,6 +494,7 @@ sub _map_agents_with_mapping {
         # Generate agent URI
         my $agent_uri = "${base_uri}agent/" . $agent_name;
         $agent_uri =~ s/[\s,\.]+/_/g;
+        $agent_uri =~ s/_$//; # Remove trailing underscore
         
         # Determine agent type from mapping or tag
         my $agent_type = $mapping->{type} || 

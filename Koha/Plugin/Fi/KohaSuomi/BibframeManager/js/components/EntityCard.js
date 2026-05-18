@@ -105,11 +105,11 @@ export default {
                 <div v-for="(rel, relIndex) in entity.relationships" :key="relIndex" class="d-flex gap-2 align-items-center mb-2">
                     <select v-model="rel.predicate" class="form-select" style="width: 200px;">
                         <option value="">Select Relationship...</option>
-                        <option value="bffi:hasExpression">hasExpression</option>
-                        <option value="bffi:expressionOf">expressionOf</option>
-                        <option value="bffi:manifestationOf">manifestationOf</option>
-                        <option value="bffi:itemOf">itemOf</option>
-                        <option value="bffi:relatedTo">relatedTo</option>
+                        <option v-for="suggestion in store.getRelationshipSuggestions(entity.type)" 
+                                :key="suggestion.value" 
+                                :value="suggestion.value">
+                            {{ suggestion.label }}
+                        </option>
                         <option value="custom">Custom...</option>
                     </select>
                     

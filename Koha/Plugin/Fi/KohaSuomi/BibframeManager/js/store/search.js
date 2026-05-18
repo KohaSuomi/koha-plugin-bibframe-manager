@@ -1,6 +1,5 @@
 const { defineStore } = Pinia;
 import { useKohaApi } from '../composables/api.js';
-import { useBibframeStore } from './index.js';
 
 export const useSearchStore = defineStore('search', {
     state: () => ({

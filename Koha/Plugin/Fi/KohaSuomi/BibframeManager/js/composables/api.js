@@ -14,11 +14,16 @@ export function useKohaApi() {
 export function usePluginApi() {
     const httpClient = HTTPClient();
 
-    const url = '/contrib/kohasuomi/';
+    const url = '/contrib/kohasuomi';
 
     return {
-        async convertRecordToBibframe(biblionumber) {
-            //return await httpClient.post(url+'/bibframe/'
+        async convertRecordToBibframe(biblionumber, format = 'turtle', saveToDb = false) {
+            return await httpClient.post(url + '/bibframe/convert', {
+                method: 'biblio',
+                biblionumber: biblionumber,
+                format: format,
+                save_to_db: saveToDb
+            });
         }
     }
 }

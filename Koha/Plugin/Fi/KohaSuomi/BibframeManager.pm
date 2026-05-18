@@ -58,10 +58,13 @@ sub tool {
 sub api_routes {
     my ( $self, $args ) = @_;
 
-    my $spec_str = $self->mbf_read('openapi.json');
-    my $spec     = decode_json($spec_str);
+    my $spec_dir = $self->mbf_dir();
+    my $spec_file = $spec_dir . '/openapi.yaml';
 
-    return $spec;
+    my $schema = JSON::Validator::Schema::OpenAPIv2->new;
+    $schema->resolve( $spec_file );
+
+    return $schema->bundle->data;
 }
 
 ## API namespace

@@ -58,15 +58,14 @@ export default {
             </div>
 
             <div class="row">
-                <!-- Left Sidebar - Property Suggestions -->
+                <!-- Left Sidebar-->
                 <div class="col-md-3">
-                    <PropertySuggestions />
+                    <SearchRecords />
                 </div>
 
                 <!-- Main Content -->
                 <div class="col-md-9">
                     <!-- Configuration Section -->
-                    <SearchRecords />
                     <div class="card mb-4">
                         <div class="card-body">
                             <h5 class="card-title"><i class="fas fa-cog"></i> Configuration</h5>

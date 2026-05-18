@@ -20,9 +20,10 @@ use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 
 # Get biblionumber from command line
 my $biblionumber = shift @ARGV;
+my $dry_run = shift @ARGV // 0; # Set to 1 to skip database saving and file export
 
 unless ($biblionumber && $biblionumber =~ /^\d+$/) {
-    die "Usage: $0 <biblionumber>\n";
+    die "Usage: $0 <biblionumber> [dry_run]\n";
 }
 
 say "=" x 60;
@@ -70,10 +71,18 @@ for my $i (0..$sample_count) {
 say "  ..." if @$triples > 5;
 say "";
 
-# Step 3: Save to biblio_metadata table
-say "Step 3: Saving converted record to biblio_metadata table...";
 
 my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
+
+
+if ($dry_run) {
+    print $db->serializeTriples($triples, 'ntriples');
+    say "Dry run mode enabled - skipping database save and file export.";
+    exit 0;
+}
+
+# Step 3: Save to biblio_metadata table
+say "Step 3: Saving converted record to biblio_metadata table...";
 
 # Save in Turtle format (most readable)
 my $turtle_id = $db->saveBibframeMetadata(

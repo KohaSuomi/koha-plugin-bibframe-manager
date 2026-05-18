@@ -624,7 +624,7 @@ marc21_to_manifestation:
     property: 'bffi:identifier'
     type: 'bffi:Isbn'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
       q: 'bffi:qualifier'
     rda_match: 'rdam:P30004'
   
@@ -632,19 +632,19 @@ marc21_to_manifestation:
     property: 'bffi:identifier'
     type: 'bffi:Issn'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
     rda_match: 'rdam:P30005'
   
   '024':
     property: 'bffi:identifier'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
       '2': 'bffi:source'
   
   '028':
     property: 'bffi:publisherNumber'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
       b: 'bffi:publisher'
   
   # Publication information
@@ -669,7 +669,7 @@ marc21_to_manifestation:
   '300':
     property: 'bffi:extent'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
       b: 'bffi:otherPhysicalDetails'
       c: 'bffi:dimensions'
       e: 'bffi:accompanyingMaterial'
@@ -678,7 +678,7 @@ marc21_to_manifestation:
   '337':
     property: 'bffi:media'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
       b: 'bffi:code'
       '2': 'bffi:source'
     rda_match: 'rdam:P30002'
@@ -686,7 +686,7 @@ marc21_to_manifestation:
   '338':
     property: 'bffi:carrier'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
       b: 'bffi:code'
       '2': 'bffi:source'
     rda_match: 'rdam:P30001'
@@ -695,13 +695,13 @@ marc21_to_manifestation:
   '490':
     property: 'bffi:series'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
       v: 'bffi:seriesEnumeration'
   
   '830':
     property: 'bffi:series'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
       v: 'bffi:seriesEnumeration'
       n: 'bffi:partNumber'
       p: 'bffi:partName'
@@ -710,13 +710,13 @@ marc21_to_manifestation:
   '500':
     property: 'bffi:note'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
   
   '502':
     property: 'bffi:dissertation'
     type: 'bffi:Dissertation'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
       b: 'bffi:degree'
       c: 'bffi:grantingInstitution'
       d: 'bffi:date'
@@ -724,13 +724,13 @@ marc21_to_manifestation:
   '504':
     property: 'bffi:note'
     subproperties:
-      a: 'rdfs:label'
+      a: 'rdf:value'
   
   # Electronic location
   '856':
     property: 'bffi:electronicLocation'
     subproperties:
-      u: 'rdfs:label'
+      u: 'rdf:value'
       y: 'bffi:note'
       z: 'bffi:note'
       '3': 'bffi:materials'
