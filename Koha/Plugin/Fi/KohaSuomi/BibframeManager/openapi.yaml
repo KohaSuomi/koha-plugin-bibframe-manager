@@ -1,0 +1,129 @@
+---
+/bibframe/convert:
+  post:
+    x-mojo-to: "Fi::KohaSuomi::BibframeManager::Controllers::BibframeController#convert"
+    operationId: convertToBibframe
+    x-koha-authorization:
+      permissions:
+        plugins: tool
+    tags:
+      - bibframe
+    summary: Convert MARC21 to Bibframe
+    description: Converts a MARC21 record to Bibframe format
+    consumes:
+      - application/json
+    produces:
+      - application/json
+      - text/turtle
+      - application/ld+json
+      - application/n-triples
+      - application/rdf+xml
+      - text/plain
+    parameters:
+      - name: body
+        in: body
+        description: Conversion request parameters
+        required: true
+        schema:
+          type: object
+          required:
+            - method
+          properties:
+            method:
+              type: string
+              description: "Input method: biblio, marc, or text"
+              enum:
+                - biblio
+                - marc
+                - text
+            biblionumber:
+              type: integer
+              description: Biblionumber (required if method=biblio)
+            marc_file:
+              type: string
+              description: Base64 encoded MARC file (required if method=marc)
+            marc_text:
+              type: string
+              description: MARC text (required if method=text)
+            base_uri:
+              type: string
+              description: Base URI for RDF resources
+              default: "http://urn.fi/URN:NBN:fi:bib:"
+            format:
+              type: string
+              description: Output format
+              enum:
+                - turtle
+                - json-ld
+                - ntriples
+                - rdf-xml
+              default: turtle
+            save_to_db:
+              type: boolean
+              description: Save to database (biblio_metadata table)
+              default: false
+    responses:
+      200:
+        description: Successful conversion
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Conversion success status
+            triples:
+              type: array
+              description: Array of RDF triples
+              items:
+                type: object
+                properties:
+                  subject:
+                    type: string
+                  predicate:
+                    type: string
+                  object:
+                    type: string
+                  object_type:
+                    type: string
+            formatted:
+              type: string
+              description: Formatted output in requested format
+            format:
+              type: string
+              description: Output format used
+            triple_count:
+              type: integer
+              description: Number of triples generated
+            biblionumber:
+              type: integer
+              description: Biblionumber of the converted record
+            metadata_id:
+              type: integer
+              description: Metadata ID if saved to database
+            message:
+              type: string
+              description: Success message
+      400:
+        description: Bad request - invalid input
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error message
+      404:
+        description: Record not found
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error message
+      500:
+        description: Internal server error
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error message
