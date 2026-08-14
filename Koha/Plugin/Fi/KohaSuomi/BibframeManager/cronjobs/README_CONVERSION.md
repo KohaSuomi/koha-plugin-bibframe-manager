@@ -36,27 +36,46 @@ A simple, educational script that demonstrates the complete workflow of converti
 
 ### 2. convert_marc_to_Bibframe.pl
 
-A comprehensive script with many options for batch processing and different output formats.
+A comprehensive script with many options for batch processing, two conversion
+engines, and different output formats.
 
 **Usage:**
 ```bash
 ./convert_marc_to_Bibframe.pl [options]
 ```
 
+**Conversion engines (--engine):**
+- `xslt` (default) - Runs the official [marc2bibframe2](https://github.com/lcnetdev/marc2bibframe2)
+  XSLT converter (bundled in `config/`) over all selected records in one pass
+  and writes a single RDF/XML file.
+- `plugin` - Uses the plugin's own Bibframe module (Finnish BIBFRAME
+  Implementation) and stores the result in the `biblio_metadata` table or in
+  per-record files.
+
 **Options:**
+- `--engine=ENGINE` - Conversion engine: `xslt` (default) or `plugin`
 - `--biblionumber=N` - Process specific biblionumber(s), comma-separated
+- `--biblionumbers=N,M,...` - Same as `--biblionumber`
+- `--file=FILE` - Process records listed in FILE (one biblionumber per line)
 - `--range=N-M` - Process a range of biblionumbers
+- `--start=N` / `--end=M` - Same as `--range`
 - `--all` - Process all biblios in the database
-- `--format=FORMAT` - Output format: turtle (default), json-ld, ntriples, rdfxml
-- `--output=PATH` - Save to file instead of biblio_metadata table
+- `--limit=N` / `--offset=N` - Only process up to N records, skipping the first N
+- `--format=FORMAT` - Plugin engine only: turtle (default), json-ld, ntriples, rdfxml, json
+- `--output=PATH` - xslt engine: the single RDF/XML output file. plugin engine: save to file(s) instead of the biblio_metadata table
+- `--xsl=PATH` - xslt engine only: path to `marc2bibframe2.xsl` (defaults to the copy bundled in `config/`)
+- `--baseuri=URI` - xslt engine only: URI stem used for minting entity URIs
+- `--idsource=URI` - xslt engine only: URI identifying the source of the record IDs
+- `--keep-marcxml=FILE` - xslt engine only: also save the generated MARCXML collection
+- `--dry-run` - Don't save/write anything
 - `--verbose` - Show detailed progress
 - `--help` - Show help message
 
 **Examples:**
 
-Convert a single biblio:
+Convert a single biblio to a single RDF/XML file (xslt engine, default):
 ```bash
-./convert_marc_to_Bibframe.pl --biblionumber=123 --verbose
+./convert_marc_to_Bibframe.pl --biblionumber=123 --output=123.rdf --verbose
 ```
 
 Convert multiple biblios:
@@ -64,24 +83,24 @@ Convert multiple biblios:
 ./convert_marc_to_Bibframe.pl --biblionumber=123,124,125 --verbose
 ```
 
-Convert a range of biblios:
+Convert a range of biblios with a custom URI stem:
 ```bash
-./convert_marc_to_Bibframe.pl --range=100-200 --verbose
+./convert_marc_to_Bibframe.pl --range=100-200 --baseuri=http://mylibrary.org/ --verbose
 ```
 
-Convert all biblios to JSON-LD format:
+Convert all biblios to JSON-LD format and store in the database (plugin engine):
 ```bash
-./convert_marc_to_Bibframe.pl --all --format=json-ld --verbose
+./convert_marc_to_Bibframe.pl --all --engine=plugin --format=json-ld --verbose
 ```
 
-Export a single biblio to file:
+Export a single biblio to a Turtle file (plugin engine):
 ```bash
-./convert_marc_to_Bibframe.pl --biblionumber=123 --format=turtle --output=/tmp/biblio_123.ttl
+./convert_marc_to_Bibframe.pl --biblionumber=123 --engine=plugin --format=turtle --output=/tmp/biblio_123.ttl
 ```
 
-Export multiple biblios to files:
+Export multiple biblios to files (plugin engine):
 ```bash
-./convert_marc_to_Bibframe.pl --range=100-105 --format=turtle --output=/tmp/biblio.ttl --verbose
+./convert_marc_to_Bibframe.pl --range=100-105 --engine=plugin --format=turtle --output=/tmp/biblio.ttl --verbose
 ```
 (This will create separate files: biblio_100.ttl, biblio_101.ttl, etc.)
 
