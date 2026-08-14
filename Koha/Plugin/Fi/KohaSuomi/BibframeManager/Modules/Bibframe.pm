@@ -4,6 +4,10 @@ use strict;
 use warnings;
 use Try::Tiny;
 use MARC::Record;
+use MARC::File::XML;
+use XML::LibXML;
+use XML::LibXSLT;
+use File::Basename;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping;
 
@@ -545,6 +549,38 @@ sub _map_agents_with_mapping {
     }
     
     return \@triples;
+}
+
+sub convert_record_with_xslt {
+    my ($self, $marc_record, %options) = @_;
+
+    my $base_uri    = $options{base_uri}    || 'http://example.org/';
+    my $idsource    = $options{idsource}    || '';
+    my $idfield     = $options{idfield}     || '001';
+    my $localfields = $options{localfields} ? 'true()' : 'false()';
+
+    my $parser   = XML::LibXML->new();
+    my $xslt     = XML::LibXSLT->new();
+    my $xslt_path = $options{xslt_path} || $self->_find_xslt_path();
+
+    my $stylesheet = $xslt->parse_stylesheet_file($xslt_path);
+    my $source     = $parser->parse_string( $marc_record->as_xml() );
+
+    my $results = $stylesheet->transform(
+        $source,
+        baseuri     => "'" . $base_uri . "'",
+        idfield     => "'" . $idfield . "'",
+        idsource    => "'" . $idsource . "'",
+        localfields => $localfields,
+    );
+
+    return $stylesheet->output_as_bytes($results);
+}
+
+sub _find_xslt_path {
+    my ($self) = @_;
+    my $module_dir = dirname(__FILE__);
+    return "$module_dir/../config/marc2bibframe2.xsl";
 }
 
 1;

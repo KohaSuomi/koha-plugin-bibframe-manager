@@ -1,0 +1,1079 @@
+# Library of Congress BIBFRAME 2.0 RDF Mapping Configuration
+# Based on LOC BIBFRAME 2.0 ontology
+# Generated from example record: 20962936.rdf
+# LOC BIBFRAME Documentation: https://www.loc.gov/bibframe/
+
+version: "2.0"
+description: "Library of Congress BIBFRAME 2.0 to internal format mapping"
+source: "http://id.loc.gov/ontologies/bibframe/"
+
+# ===================================================================
+# NAMESPACES
+# ===================================================================
+namespaces:
+  rdf: "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  rdfs: "http://www.w3.org/2000/01/rdf-schema#"
+  bf: "http://id.loc.gov/ontologies/bibframe/"
+  bflc: "http://id.loc.gov/ontologies/bflc/"
+  madsrdf: "http://www.loc.gov/mads/rdf/v1#"
+  owl: "http://www.w3.org/2002/07/owl#"
+  skos: "http://www.w3.org/2004/02/skos/core#"
+  dcterms: "http://purl.org/dc/terms/"
+  cc: "http://creativecommons.org/ns#"
+  foaf: "http://xmlns.com/foaf/0.1/"
+  lclocal: "http://id.loc.gov/ontologies/lclocal/"
+  xs: "http://www.w3.org/2001/XMLSchema#"
+
+# ===================================================================
+# ENTITY TYPES
+# ===================================================================
+entity_types:
+  work:
+    class: "bf:Work"
+    uri_pattern: "http://id.loc.gov/resources/works/{id}"
+    description: "Highest level of abstraction, a distinct intellectual creation"
+    
+  instance:
+    class: "bf:Instance"
+    uri_pattern: "http://id.loc.gov/resources/instances/{id}"
+    description: "Individual embodiment of a Work"
+    
+  item:
+    class: "bf:Item"
+    uri_pattern: "http://id.loc.gov/resources/items/{id}"
+    description: "Actual physical or electronic copy"
+
+# ===================================================================
+# WORK PROPERTIES
+# ===================================================================
+work_properties:
+  # Authorized Access Point
+  authorized_access_point:
+    property: "bflc:aap"
+    datatype: "string"
+    cardinality: "0..1"
+    description: "Authorized Access Point for the work"
+    
+  authorized_access_point_normalized:
+    property: "bflc:aap-normalized"
+    datatype: "string"
+    cardinality: "0..1"
+    description: "Normalized form of Authorized Access Point"
+  
+  # Work Type
+  work_type:
+    property: "rdf:type"
+    datatype: "uri"
+    cardinality: "1..n"
+    description: "Type of work"
+    controlled_vocabulary:
+      base_uri: "http://id.loc.gov/ontologies/bibframe/"
+      values:
+        - uri: "Text"
+          label: "Text"
+        - uri: "Monograph"
+          label: "Monograph"
+        - uri: "Serial"
+          label: "Serial"
+        - uri: "StillImage"
+          label: "Still Image"
+        - uri: "MovingImage"
+          label: "Moving Image"
+        - uri: "Audio"
+          label: "Audio"
+        - uri: "Cartography"
+          label: "Cartography"
+        - uri: "Collection"
+          label: "Collection"
+        - uri: "Dataset"
+          label: "Dataset"
+        - uri: "MixedMaterial"
+          label: "Mixed Material"
+        - uri: "Multimedia"
+          label: "Multimedia"
+        - uri: "NotatedMovement"
+          label: "Notated Movement"
+        - uri: "NotatedMusic"
+          label: "Notated Music"
+        - uri: "Object"
+          label: "Object"
+        - uri: "Software"
+          label: "Software"
+        - uri: "StillImage"
+          label: "Still Image"
+  
+  # Language
+  language:
+    property: "bf:language"
+    type: "bf:Language"
+    cardinality: "0..n"
+    description: "Language of the work content"
+    structure:
+      uri:
+        base: "http://id.loc.gov/vocabulary/languages/"
+        pattern: "{code}"
+      properties:
+        label:
+          property: "rdfs:label"
+          datatype: "string"
+          lang_tag: "xml:lang"
+        code:
+          property: "bf:code"
+          datatype: "xs:string"
+    controlled_vocabulary:
+      source: "ISO 639-2 Language Codes"
+      uri: "http://id.loc.gov/vocabulary/languages/"
+  
+  # Illustrative Content
+  illustrative_content:
+    property: "bf:illustrativeContent"
+    type: "bf:Illustration"
+    cardinality: "0..n"
+    description: "Illustrative content present in the resource"
+    structure:
+      uri:
+        base: "http://id.loc.gov/vocabulary/millus/"
+        pattern: "{code}"
+      properties:
+        label:
+          property: "rdfs:label"
+          datatype: "string"
+        code:
+          property: "bf:code"
+          datatype: "string"
+    controlled_vocabulary:
+      source: "MARC Illustration Codes"
+      values:
+        - code: "ill"
+          label: "illustrations"
+        - code: "map"
+          label: "maps"
+        - code: "por"
+          label: "portraits"
+        - code: "cha"
+          label: "charts"
+        - code: "pla"
+          label: "plans"
+        - code: "pht"
+          label: "photographs"
+        - code: "fac"
+          label: "facsimiles"
+        - code: "coa"
+          label: "coats of arms"
+        - code: "gen"
+          label: "genealogical tables"
+        - code: "for"
+          label: "forms"
+        - code: "sam"
+          label: "samples"
+  
+  # Supplementary Content
+  supplementary_content:
+    property: "bf:supplementaryContent"
+    type: "bf:SupplementaryContent"
+    cardinality: "0..n"
+    description: "Supplementary content present in the resource"
+    structure:
+      uri:
+        base: "http://id.loc.gov/vocabulary/msupplcont/"
+        pattern: "{code}"
+      properties:
+        label:
+          property: "rdfs:label"
+          datatype: "string"
+        code:
+          property: "bf:code"
+          datatype: "string"
+    controlled_vocabulary:
+      source: "MARC Supplementary Content Codes"
+      values:
+        - code: "index"
+          label: "index"
+        - code: "bibliography"
+          label: "bibliography"
+        - code: "thematic index"
+          label: "thematic index"
+        - code: "discography"
+          label: "discography"
+        - code: "filmography"
+          label: "filmography"
+  
+  # Classification - Library of Congress
+  classification_lcc:
+    property: "bf:classification"
+    type: "bf:ClassificationLcc"
+    cardinality: "0..n"
+    description: "Library of Congress Classification"
+    structure:
+      properties:
+        classification_portion:
+          property: "bf:classificationPortion"
+          datatype: "string"
+          description: "Main classification number (e.g., TK4057)"
+        item_portion:
+          property: "bf:itemPortion"
+          datatype: "string"
+          description: "Item/cutter number (e.g., .M685 2008)"
+        assigner:
+          property: "bf:assigner"
+          type: "bf:Organization"
+          structure:
+            uri:
+              base: "http://id.loc.gov/vocabulary/organizations/"
+              pattern: "{code}"
+            properties:
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+              code_standard:
+                property: "bf:code"
+                datatype: "http://id.loc.gov/datatypes/orgs/code"
+              code_normalized:
+                property: "bf:code"
+                datatype: "http://id.loc.gov/datatypes/orgs/normalized"
+              code_iso:
+                property: "bf:code"
+                datatype: "http://id.loc.gov/datatypes/orgs/iso15511"
+        status:
+          property: "bf:status"
+          type: "bf:Status"
+          structure:
+            uri:
+              base: "http://id.loc.gov/vocabulary/mstatus/"
+              pattern: "{code}"
+            properties:
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+              code:
+                property: "bf:code"
+                datatype: "string"
+  
+  # Classification - Dewey Decimal
+  classification_ddc:
+    property: "bf:classification"
+    type: "bf:ClassificationDdc"
+    cardinality: "0..n"
+    description: "Dewey Decimal Classification"
+    structure:
+      properties:
+        classification_portion:
+          property: "bf:classificationPortion"
+          datatype: "string"
+          description: "DDC number (e.g., 621.46076)"
+        source:
+          property: "bf:source"
+          type: "bf:Source"
+          structure:
+            properties:
+              code:
+                property: "bf:code"
+                datatype: "string"
+                description: "DDC edition number (e.g., 23)"
+        edition:
+          property: "bf:edition"
+          datatype: "string"
+          description: "Edition type"
+          values:
+            - "full"
+            - "abridged"
+  
+  # Title
+  title:
+    property: "bf:title"
+    type: "bf:Title"
+    cardinality: "1..n"
+    description: "Title of the work"
+    structure:
+      properties:
+        main_title:
+          property: "bf:mainTitle"
+          datatype: "string"
+          required: true
+          description: "Main title"
+        subtitle:
+          property: "bf:subtitle"
+          datatype: "string"
+          required: false
+          description: "Subtitle"
+        part_number:
+          property: "bf:partNumber"
+          datatype: "string"
+          required: false
+          description: "Part number"
+        part_name:
+          property: "bf:partName"
+          datatype: "string"
+          required: false
+          description: "Part name"
+  
+  # Content Type
+  content:
+    property: "bf:content"
+    type: "bf:Content"
+    cardinality: "0..n"
+    description: "Content type of the work"
+    structure:
+      uri:
+        base: "http://id.loc.gov/vocabulary/contentTypes/"
+        pattern: "{code}"
+      properties:
+        label:
+          property: "rdfs:label"
+          datatype: "string"
+        code:
+          property: "bf:code"
+          datatype: "string"
+    controlled_vocabulary:
+      source: "RDA Content Type"
+      uri: "http://id.loc.gov/vocabulary/contentTypes/"
+      values:
+        - code: "txt"
+          label: "text"
+        - code: "cri"
+          label: "cartographic image"
+        - code: "crd"
+          label: "cartographic dataset"
+        - code: "crm"
+          label: "cartographic moving image"
+        - code: "crt"
+          label: "cartographic three-dimensional form"
+        - code: "ntm"
+          label: "notated movement"
+        - code: "ntv"
+          label: "notated music"
+        - code: "prm"
+          label: "performed music"
+        - code: "snd"
+          label: "sounds"
+        - code: "spw"
+          label: "spoken word"
+        - code: "sti"
+          label: "still image"
+        - code: "tci"
+          label: "tactile image"
+        - code: "tcm"
+          label: "tactile music notation"
+        - code: "tcn"
+          label: "tactile notated movement"
+        - code: "tct"
+          label: "tactile text"
+        - code: "tcf"
+          label: "tactile three-dimensional form"
+        - code: "tdf"
+          label: "three-dimensional form"
+        - code: "tdm"
+          label: "three-dimensional moving image"
+        - code: "tdi"
+          label: "two-dimensional moving image"
+        - code: "xxx"
+          label: "other"
+  
+  # Subject
+  subject:
+    property: "bf:subject"
+    cardinality: "0..n"
+    description: "Subject of the work"
+    types:
+      topic:
+        type: "bf:Topic"
+        structure:
+          uri:
+            base: "http://id.loc.gov/authorities/subjects/"
+            pattern: "{id}"
+          properties:
+            label:
+              property: "rdfs:label"
+              datatype: "string"
+              lang_tag: "xml:lang"
+            marc_key:
+              property: "bflc:marcKey"
+              datatype: "string"
+              description: "Original MARC field representation"
+            source:
+              property: "bf:source"
+              type: "bf:Source"
+              structure:
+                uri: "http://id.loc.gov/authorities/subjects"
+                properties:
+                  label:
+                    property: "rdfs:label"
+                    datatype: "string"
+      person:
+        type: "bf:Person"
+        description: "Person as subject"
+      organization:
+        type: "bf:Organization"
+        description: "Organization as subject"
+      family:
+        type: "bf:Family"
+        description: "Family as subject"
+      geographic:
+        type: "bf:Geographic"
+        description: "Geographic location as subject"
+      temporal:
+        type: "bf:Temporal"
+        description: "Time period as subject"
+      title:
+        type: "bf:Title"
+        description: "Work title as subject"
+  
+  # Contribution
+  contribution:
+    property: "bf:contribution"
+    type: "bf:Contribution"
+    cardinality: "0..n"
+    description: "Agent contribution to the work"
+    structure:
+      properties:
+        agent:
+          property: "bf:agent"
+          type: "bf:Agent"
+          required: true
+          structure:
+            uri:
+              base: "http://id.loc.gov/rwo/agents/"
+              pattern: "{id}"
+            properties:
+              rdf_type:
+                property: "rdf:type"
+                datatype: "uri"
+                values:
+                  - "http://id.loc.gov/ontologies/bibframe/Person"
+                  - "http://id.loc.gov/ontologies/bibframe/Organization"
+                  - "http://id.loc.gov/ontologies/bibframe/Family"
+                  - "http://id.loc.gov/ontologies/bibframe/Jurisdiction"
+                  - "http://id.loc.gov/ontologies/bibframe/Meeting"
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+                description: "Agent name"
+              marc_key:
+                property: "bflc:marcKey"
+                datatype: "string"
+                description: "Original MARC representation"
+        role:
+          property: "bf:role"
+          type: "bf:Role"
+          required: false
+          structure:
+            uri:
+              base: "http://id.loc.gov/vocabulary/relators/"
+              pattern: "{code}"
+            properties:
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+              code:
+                property: "bf:code"
+                datatype: "string"
+  
+  # Instance Relationship
+  has_instance:
+    property: "bf:hasInstance"
+    datatype: "uri"
+    cardinality: "0..n"
+    description: "Link to Instance entities"
+  
+  # Collection Membership
+  is_part_of:
+    property: "dcterms:isPartOf"
+    datatype: "uri"
+    cardinality: "0..n"
+    description: "Collection or larger work this is part of"
+  
+  # Administrative Metadata
+  admin_metadata:
+    property: "bf:adminMetadata"
+    type: "bf:AdminMetadata"
+    cardinality: "1..n"
+    description: "Administrative metadata about the bibliographic description"
+    structure:
+      properties:
+        status:
+          property: "bf:status"
+          type: "bf:Status"
+          structure:
+            uri:
+              base: "http://id.loc.gov/vocabulary/mstatus/"
+              pattern: "{code}"
+            properties:
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+              code:
+                property: "bf:code"
+                datatype: "string"
+          values:
+            - code: "n"
+              label: "new"
+              description: "New record"
+            - code: "c"
+              label: "changed"
+              description: "Changed/corrected record"
+            - code: "d"
+              label: "deleted"
+              description: "Deleted record"
+            - code: "i"
+              label: "increase"
+              description: "Increase in encoding level"
+            - code: "o"
+              label: "obsolete"
+              description: "Obsolete record"
+        
+        date:
+          property: "bf:date"
+          datatype: ["xs:date", "xs:dateTime"]
+          description: "Date of administrative action"
+        
+        agent:
+          property: "bf:agent"
+          type: "bf:Agent"
+          description: "Agent responsible for administrative action"
+          structure:
+            uri:
+              base: "http://id.loc.gov/vocabulary/organizations/"
+              pattern: "{code}"
+            properties:
+              rdf_type:
+                property: "rdf:type"
+                datatype: "uri"
+                value: "http://id.loc.gov/ontologies/bibframe/Organization"
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+              code_standard:
+                property: "bf:code"
+                datatype: "http://id.loc.gov/datatypes/orgs/code"
+              code_normalized:
+                property: "bf:code"
+                datatype: "http://id.loc.gov/datatypes/orgs/normalized"
+              code_iso:
+                property: "bf:code"
+                datatype: "http://id.loc.gov/datatypes/orgs/iso15511"
+        
+        description_modifier:
+          property: "bf:descriptionModifier"
+          type: "bf:Agent"
+          description: "Agent modifying the description"
+        
+        generation_process:
+          property: "bf:generationProcess"
+          datatype: "uri"
+          description: "Process or tool that generated/modified the record"
+          example: "https://github.com/lcnetdev/marc2bibframe2/releases/tag/v3.0.0"
+        
+        description_level:
+          property: "bf:descriptionLevel"
+          datatype: "uri"
+          description: "BIBFRAME ontology version used"
+          example: "http://id.loc.gov/ontologies/bibframe-2-6-0/"
+        
+        encoding_level:
+          property: "bflc:encodingLevel"
+          type: "bflc:EncodingLevel"
+          structure:
+            uri:
+              base: "http://id.loc.gov/vocabulary/menclvl/"
+              pattern: "{code}"
+            properties:
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+              code:
+                property: "bf:code"
+                datatype: "string"
+          values:
+            - code: "f"
+              label: "full"
+            - code: "I"
+              label: "full level, material not examined"
+            - code: "K"
+              label: "less-than-full level, material not examined"
+            - code: "L"
+              label: "less-than-full level added from batch process"
+            - code: "M"
+              label: "less-than-full level added from batch process"
+            - code: "u"
+              label: "unknown"
+            - code: "z"
+              label: "not applicable"
+        
+        description_conventions:
+          property: "bf:descriptionConventions"
+          type: "bf:DescriptionConventions"
+          cardinality: "0..n"
+          structure:
+            uri:
+              base: "http://id.loc.gov/vocabulary/descriptionConventions/"
+              pattern: "{code}"
+            properties:
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+              code:
+                property: "bf:code"
+                datatype: "string"
+          values:
+            - code: "rda"
+              label: "Resource description and access"
+            - code: "isbd"
+              label: "ISBD: International standard bibliographic description"
+            - code: "aacr"
+              label: "Anglo-American cataloguing rules"
+        
+        identified_by:
+          property: "bf:identifiedBy"
+          type: "bf:Local"
+          description: "Local identifier for the record"
+          structure:
+            properties:
+              value:
+                property: "rdf:value"
+                datatype: "string"
+              assigner:
+                property: "bf:assigner"
+                type: "bf:Organization"
+        
+        marc_key:
+          property: "bflc:marcKey"
+          datatype: "string"
+          cardinality: "0..n"
+          description: "Original MARC field representation"
+        
+        local_field:
+          property_pattern: "lclocal:d{tag}"
+          datatype: "string"
+          cardinality: "0..n"
+          description: "Local MARC field data (9XX fields)"
+        
+        description_language:
+          property: "bf:descriptionLanguage"
+          type: "bf:Language"
+          description: "Language of cataloging/description"
+        
+        note:
+          property: "bf:note"
+          type: "bf:Note"
+          cardinality: "0..n"
+          structure:
+            properties:
+              rdf_type:
+                property: "rdf:type"
+                datatype: "uri"
+                value: "http://id.loc.gov/vocabulary/mnotetype/internal"
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+        
+        description_authentication:
+          property: "bf:descriptionAuthentication"
+          type: "bf:DescriptionAuthentication"
+          description: "Agency authenticating the description"
+          structure:
+            uri:
+              base: "http://id.loc.gov/vocabulary/marcauthen/"
+              pattern: "{code}"
+            properties:
+              label:
+                property: "rdfs:label"
+                datatype: "string"
+              code:
+                property: "bf:code"
+                datatype: "string"
+          values:
+            - code: "pcc"
+              label: "Program for Cooperative Cataloging"
+            - code: "nsdp"
+              label: "National Serials Data Program"
+
+# ===================================================================
+# INSTANCE PROPERTIES
+# ===================================================================
+instance_properties:
+  # Title
+  title:
+    property: "bf:title"
+    type: "bf:Title"
+    cardinality: "1..n"
+    description: "Title of the instance"
+    structure:
+      properties:
+        main_title:
+          property: "bf:mainTitle"
+          datatype: "string"
+        subtitle:
+          property: "bf:subtitle"
+          datatype: "string"
+        part_number:
+          property: "bf:partNumber"
+          datatype: "string"
+        part_name:
+          property: "bf:partName"
+          datatype: "string"
+  
+  # Publication Statement
+  publication_statement:
+    property: "bf:publicationStatement"
+    datatype: "string"
+    cardinality: "0..1"
+    description: "Human-readable publication information"
+    example: "Homewood, Illinois: American Technical Publishers, [2008]"
+  
+  # Provision Activity
+  provision_activity:
+    property: "bf:provisionActivity"
+    cardinality: "0..n"
+    description: "Publication, distribution, manufacture, or production activity"
+    types:
+      publication:
+        type: "bf:Publication"
+      distribution:
+        type: "bf:Distribution"
+      manufacture:
+        type: "bf:Manufacture"
+      production:
+        type: "bf:Production"
+    structure:
+      properties:
+        place:
+          property: "bf:place"
+          type: "bf:Place"
+        agent:
+          property: "bf:agent"
+          type: "bf:Agent"
+        date:
+          property: "bf:date"
+          datatype: "string"
+  
+  # Identifiers
+  identified_by:
+    property: "bf:identifiedBy"
+    cardinality: "0..n"
+    description: "Instance identifiers"
+    types:
+      isbn:
+        type: "bf:Isbn"
+        description: "International Standard Book Number"
+      issn:
+        type: "bf:Issn"
+        description: "International Standard Serial Number"
+      lccn:
+        type: "bf:Lccn"
+        description: "Library of Congress Control Number"
+      local:
+        type: "bf:Local"
+        description: "Local identifier"
+    structure:
+      properties:
+        value:
+          property: "rdf:value"
+          datatype: "string"
+        qualifier:
+          property: "bf:qualifier"
+          datatype: "string"
+  
+  # Media Type
+  media:
+    property: "bf:media"
+    type: "bf:Media"
+    cardinality: "0..n"
+    description: "Media type (RDA)"
+    structure:
+      uri:
+        base: "http://id.loc.gov/vocabulary/mediaTypes/"
+        pattern: "{code}"
+      properties:
+        label:
+          property: "rdfs:label"
+          datatype: "string"
+        code:
+          property: "bf:code"
+          datatype: "string"
+    controlled_vocabulary:
+      source: "RDA Media Type"
+      values:
+        - code: "n"
+          label: "unmediated"
+        - code: "c"
+          label: "computer"
+        - code: "h"
+          label: "microform"
+        - code: "p"
+          label: "microscopic"
+        - code: "s"
+          label: "stereographic"
+        - code: "v"
+          label: "video"
+        - code: "g"
+          label: "projected"
+        - code: "x"
+          label: "other"
+        - code: "z"
+          label: "unspecified"
+  
+  # Carrier Type
+  carrier:
+    property: "bf:carrier"
+    type: "bf:Carrier"
+    cardinality: "0..n"
+    description: "Carrier type (RDA)"
+    structure:
+      uri:
+        base: "http://id.loc.gov/vocabulary/carriers/"
+        pattern: "{code}"
+      properties:
+        label:
+          property: "rdfs:label"
+          datatype: "string"
+        code:
+          property: "bf:code"
+          datatype: "string"
+    controlled_vocabulary:
+      source: "RDA Carrier Type"
+  
+  # Extent
+  extent:
+    property: "bf:extent"
+    type: "bf:Extent"
+    cardinality: "0..n"
+    description: "Physical extent of the resource"
+    structure:
+      properties:
+        label:
+          property: "rdfs:label"
+          datatype: "string"
+  
+  # Dimensions
+  dimensions:
+    property: "bf:dimensions"
+    datatype: "string"
+    cardinality: "0..1"
+    description: "Physical dimensions of the resource"
+  
+  # Item Relationship
+  has_item:
+    property: "bf:hasItem"
+    cardinality: "0..n"
+    description: "Link to Item entities"
+  
+  # Work Relationship
+  instance_of:
+    property: "bf:instanceOf"
+    datatype: "uri"
+    cardinality: "1"
+    description: "Link to Work entity"
+    required: true
+
+# ===================================================================
+# ITEM PROPERTIES
+# ===================================================================
+item_properties:
+  # Holding Institution
+  held_by:
+    property: "bf:heldBy"
+    type: "bf:Agent"
+    cardinality: "0..1"
+    description: "Institution holding the item"
+  
+  # Shelf Location
+  shelf_mark:
+    property: "bf:shelfMark"
+    type: "bf:ShelfMark"
+    cardinality: "0..n"
+    description: "Shelf location identifier"
+    structure:
+      properties:
+        label:
+          property: "rdfs:label"
+          datatype: "string"
+  
+  # Enumeration and Chronology
+  enumeration_and_chronology:
+    property: "bf:enumerationAndChronology"
+    datatype: "string"
+    cardinality: "0..1"
+    description: "Volume/issue information for serials"
+  
+  # Instance Relationship
+  item_of:
+    property: "bf:itemOf"
+    datatype: "uri"
+    cardinality: "1"
+    description: "Link to Instance entity"
+    required: true
+
+# ===================================================================
+# CONTROLLED VOCABULARIES
+# ===================================================================
+controlled_vocabularies:
+  languages:
+    base_uri: "http://id.loc.gov/vocabulary/languages/"
+    description: "ISO 639-2 Language Codes"
+    source: "Library of Congress"
+  
+  countries:
+    base_uri: "http://id.loc.gov/vocabulary/countries/"
+    description: "MARC Code List for Countries"
+    source: "Library of Congress"
+  
+  geographic_areas:
+    base_uri: "http://id.loc.gov/vocabulary/geographicAreas/"
+    description: "MARC Code List for Geographic Areas"
+    source: "Library of Congress"
+  
+  relators:
+    base_uri: "http://id.loc.gov/vocabulary/relators/"
+    description: "MARC Code List for Relators"
+    source: "Library of Congress"
+  
+  content_types:
+    base_uri: "http://id.loc.gov/vocabulary/contentTypes/"
+    description: "RDA Content Type"
+    source: "Library of Congress"
+  
+  media_types:
+    base_uri: "http://id.loc.gov/vocabulary/mediaTypes/"
+    description: "RDA Media Type"
+    source: "Library of Congress"
+  
+  carrier_types:
+    base_uri: "http://id.loc.gov/vocabulary/carriers/"
+    description: "RDA Carrier Type"
+    source: "Library of Congress"
+  
+  organizations:
+    base_uri: "http://id.loc.gov/vocabulary/organizations/"
+    description: "MARC Code List for Organizations"
+    source: "Library of Congress"
+  
+  illustration_codes:
+    base_uri: "http://id.loc.gov/vocabulary/millus/"
+    description: "MARC Illustration Codes"
+    source: "Library of Congress"
+  
+  supplementary_content:
+    base_uri: "http://id.loc.gov/vocabulary/msupplcont/"
+    description: "MARC Supplementary Content Codes"
+    source: "Library of Congress"
+  
+  status_codes:
+    base_uri: "http://id.loc.gov/vocabulary/mstatus/"
+    description: "Record Status Codes"
+    source: "Library of Congress"
+  
+  encoding_level:
+    base_uri: "http://id.loc.gov/vocabulary/menclvl/"
+    description: "MARC Encoding Level Codes"
+    source: "Library of Congress"
+  
+  description_conventions:
+    base_uri: "http://id.loc.gov/vocabulary/descriptionConventions/"
+    description: "Description Convention Codes"
+    source: "Library of Congress"
+
+# ===================================================================
+# DATA TYPES
+# ===================================================================
+datatypes:
+  string: "http://www.w3.org/2001/XMLSchema#string"
+  date: "http://www.w3.org/2001/XMLSchema#date"
+  datetime: "http://www.w3.org/2001/XMLSchema#dateTime"
+  integer: "http://www.w3.org/2001/XMLSchema#integer"
+  decimal: "http://www.w3.org/2001/XMLSchema#decimal"
+  boolean: "http://www.w3.org/2001/XMLSchema#boolean"
+  uri: "http://www.w3.org/2001/XMLSchema#anyURI"
+  language: "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+
+# ===================================================================
+# PROCESSING RULES
+# ===================================================================
+processing_rules:
+  # Multiple values handling
+  multiple_values:
+    strategy: "array"
+    separator: "; "
+    preserve_order: true
+  
+  # URI resolution
+  uri_resolution:
+    dereference: true
+    follow_redirects: true
+    cache_ttl_seconds: 3600
+    timeout_seconds: 30
+  
+  # Language tags
+  language_tags:
+    default: "en"
+    preserve_original: true
+    normalize: false
+  
+  # Empty values
+  empty_values:
+    skip_empty_strings: true
+    skip_null: true
+    null_representation: null
+  
+  # Namespace handling
+  normalize_namespaces: true
+  use_prefixes: true
+  
+  # Label preference
+  label_preference_order:
+    - "rdfs:label"
+    - "skos:prefLabel"
+    - "foaf:name"
+    - "bf:code"
+    - "rdf:value"
+  
+  # Date formatting
+  date_format:
+    output_format: "ISO8601"
+    timezone: "UTC"
+  
+  # URI construction
+  uri_construction:
+    use_https: true
+    normalize_path: true
+    encode_special_chars: true
+
+# ===================================================================
+# ENTITY RELATIONSHIPS
+# ===================================================================
+relationships:
+  work_to_instance:
+    forward_property: "bf:hasInstance"
+    reverse_property: "bf:instanceOf"
+    cardinality: "1:n"
+    description: "A Work can have multiple Instances; an Instance must have exactly one Work"
+  
+  instance_to_item:
+    forward_property: "bf:hasItem"
+    reverse_property: "bf:itemOf"
+    cardinality: "1:n"
+    description: "An Instance can have multiple Items; an Item must have exactly one Instance"
+  
+  work_to_subject:
+    forward_property: "bf:subject"
+    cardinality: "n:n"
+    description: "A Work can have multiple subjects"
+  
+  work_to_contribution:
+    forward_property: "bf:contribution"
+    cardinality: "1:n"
+    description: "A Work can have multiple contributions"
+
+# ===================================================================
+# MAPPING METADATA
+# ===================================================================
+mapping_metadata:
+  version: "1.0.0"
+  created_date: "2026-03-19"
+  based_on_example: "20962936.rdf"
+  bibframe_version: "2.6.0"
+  source_authority: "Library of Congress"
+  maintained_by: "Koha Suomi"
+  related_documentation:
+    - "https://www.loc.gov/bibframe/docs/"
+    - "https://id.loc.gov/ontologies/bibframe.html"
+    - "https://github.com/lcnetdev/bibframe2marc"
