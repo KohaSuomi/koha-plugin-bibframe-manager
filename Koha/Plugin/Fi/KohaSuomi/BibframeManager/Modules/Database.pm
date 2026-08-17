@@ -202,8 +202,7 @@ sub serializeTriples {
     $format ||= 'turtle';
     
     if ($format eq 'json') {
-        # Simple JSON representation
-        return JSON->new->utf8->pretty->encode($triples);
+        return $self->_toJson($triples);
     } elsif ($format eq 'ntriples') {
         # N-Triples format
         return $self->_toNTriples($triples);
@@ -218,8 +217,8 @@ sub serializeTriples {
         return $self->_toJsonLd($triples);
     }
     
-    # Default to JSON
-    return JSON->new->utf8->pretty->encode($triples);
+    # Default to structured JSON
+    return $self->_toJson($triples);
 }
 
 =head2 _toNTriples
@@ -379,6 +378,271 @@ XML_HEADER
     
     $output .= "</rdf:RDF>\n";
     return $output;
+}
+
+=head2 _toJson
+
+    Internal method to serialize triples to structured BIBFRAME JSON.
+    Groups triples by entity type and builds a hierarchical representation.
+
+=cut
+
+# Namespace prefix mapping for readable predicate names
+my %NAMESPACE_PREFIX = (
+    'http://id.loc.gov/ontologies/bibframe/'        => 'bf',
+    'http://urn.fi/URN:NBN:fi:schema:bffi:'          => 'bffi',
+    'http://urn.fi/URN:NBN:fi:schema:Bibframe:'      => 'Bibframe',
+    'http://www.w3.org/2000/01/rdf-schema#'          => 'rdfs',
+    'http://www.w3.org/1999/02/22-rdf-syntax-ns#'    => 'rdf',
+    'http://rdaregistry.info/Elements/w/'             => 'rdaw',
+    'http://rdaregistry.info/Elements/e/'             => 'rdae',
+    'http://rdaregistry.info/Elements/m/'             => 'rdam',
+    'http://rdaregistry.info/Elements/i/'             => 'rdai',
+    'http://id.loc.gov/ontologies/bflc/'             => 'bflc',
+    'http://purl.org/dc/elements/1.1/'                => 'dc',
+    'http://purl.org/dc/terms/'                       => 'dcterms',
+);
+
+# Predicate local names that map to meaningful JSON keys
+my %PREDICATE_KEY = (
+    'title'              => 'title',
+    'mainTitle'          => 'mainTitle',
+    'subtitle'           => 'subtitle',
+    'language'           => 'language',
+    'subject'            => 'subjects',
+    'contribution'       => 'contributors',
+    'creator'            => 'creators',
+    'contributor'        => 'contributors',
+    'agent'              => 'agents',
+    'instanceOf'         => 'instanceOf',
+    'hasInstance'        => 'instances',
+    'hasWork'            => 'works',
+    'content'            => 'content',
+    'classification'     => 'classifications',
+    'subject'            => 'subjects',
+    'note'               => 'notes',
+    'identifier'         => 'identifiers',
+    'identifiedBy'       => 'identifiers',
+    'provisionActivity'  => 'provisionActivity',
+    'publicationStatement' => 'publicationStatement',
+    'extent'             => 'extent',
+    'carrierType'        => 'carrierType',
+    'mediaType'          => 'mediaType',
+    'electronicLocator'  => 'electronicLocator',
+    'series'             => 'series',
+    'hasExpression'      => 'hasExpression',
+    'expressionOf'       => 'expressionOf',
+    'manifestationOfExpression' => 'manifestationOfExpression',
+    'expressionManifested' => 'expressionManifested',
+    'role'               => 'role',
+    'source'             => 'source',
+    'code'               => 'code',
+    'date'               => 'date',
+    'status'             => 'status',
+    'assigner'           => 'assigner',
+    'illustrativeContent' => 'illustrativeContent',
+    'supplementaryContent' => 'supplementaryContent',
+    'cartographicAttributes' => 'cartographicAttributes',
+    'form'               => 'form',
+    'genreForm'          => 'genreForm',
+    'adminMetadata'      => 'adminMetadata',
+    'descriptionLevel'   => 'descriptionLevel',
+    'encodingLevel'      => 'encodingLevel',
+);
+
+sub _toJson {
+    my ($self, $triples) = @_;
+
+    return '{}' unless $triples && @$triples;
+
+    # Group triples by subject
+    my %by_subject;
+    foreach my $triple (@$triples) {
+        push @{$by_subject{$triple->{subject}}}, $triple;
+    }
+
+    # Identify entity types from rdf:type triples
+    my %entity_types;  # subject -> [types]
+    my %type_uris = (
+        'http://id.loc.gov/ontologies/bibframe/Work'         => 'Work',
+        'http://id.loc.gov/ontologies/bibframe/Instance'     => 'Instance',
+        'http://id.loc.gov/ontologies/bibframe/Expression'   => 'Expression',
+        'http://id.loc.gov/ontologies/bibframe/Item'         => 'Item',
+        'http://id.loc.gov/ontologies/bibframe/Agent'        => 'Agent',
+        'http://id.loc.gov/ontologies/bibframe/Person'       => 'Person',
+        'http://id.loc.gov/ontologies/bibframe/Organization' => 'Organization',
+        'http://id.loc.gov/ontologies/bibframe/Meeting'      => 'Meeting',
+        'http://id.loc.gov/ontologies/bibframe/Topic'        => 'Topic',
+        'http://id.loc.gov/ontologies/bibframe/Language'     => 'Language',
+        'http://id.loc.gov/ontologies/bibframe/Title'        => 'Title',
+        'http://id.loc.gov/ontologies/bibframe/Contribution' => 'Contribution',
+        'http://id.loc.gov/ontologies/bibframe/ClassificationLcc' => 'ClassificationLcc',
+        'http://id.loc.gov/ontologies/bibframe/ClassificationDdc' => 'ClassificationDdc',
+        'http://id.loc.gov/ontologies/bibframe/Content'      => 'Content',
+        'http://id.loc.gov/ontologies/bibframe/Status'       => 'Status',
+        'http://id.loc.gov/ontologies/bibframe/Source'       => 'Source',
+        'http://id.loc.gov/ontologies/bibframe/AdminMetadata' => 'AdminMetadata',
+        'http://id.loc.gov/ontologies/bibframe/Illustration' => 'Illustration',
+        'http://id.loc.gov/ontologies/bibframe/SupplementaryContent' => 'SupplementaryContent',
+    );
+
+    foreach my $subject (keys %by_subject) {
+        $entity_types{$subject} = [];
+        foreach my $t (@{$by_subject{$subject}}) {
+            if ($t->{predicate} =~ /rdf:type$/ && $t->{object_type} eq 'uri') {
+                my $short = $type_uris{$t->{object}};
+                push @{$entity_types{$subject}}, $short || $t->{object};
+            }
+        }
+    }
+
+    # Classify subjects into BIBFRAME entity categories
+    my ($work_uri, $expression_uri, $manifestation_uri, $item_uri);
+    my @agent_uris;
+    my @subject_uris;
+
+    foreach my $subject (keys %entity_types) {
+        my @types = @{$entity_types{$subject}};
+        if (grep { $_ eq 'Work' } @types) {
+            $work_uri = $subject;
+        } elsif (grep { $_ eq 'Expression' } @types) {
+            $expression_uri = $subject;
+        } elsif (grep { $_ eq 'Instance' } @types) {
+            $manifestation_uri = $subject;
+        } elsif (grep { $_ eq 'Item' } @types) {
+            $item_uri = $subject;
+        } elsif (grep { /^(Agent|Person|Organization|Meeting)$/ } @types) {
+            push @agent_uris, $subject;
+        } elsif (grep { $_ eq 'Topic' } @types) {
+            push @subject_uris, $subject;
+        }
+    }
+
+    # If no typed entities found, try to infer from URI patterns
+    unless ($work_uri) {
+        for my $uri (keys %by_subject) {
+            if ($uri =~ m{/works?/}) {
+                $work_uri = $uri;
+                last;
+            }
+        }
+    }
+    unless ($manifestation_uri) {
+        for my $uri (keys %by_subject) {
+            if ($uri =~ m{/instances?/}) {
+                $manifestation_uri = $uri;
+                last;
+            }
+        }
+    }
+
+    # Build the result
+    my $result = {};
+
+    if ($work_uri) {
+        $result->{work} = $self->_build_entity_json($work_uri, \%by_subject, \%entity_types);
+    }
+
+    if ($expression_uri) {
+        $result->{expression} = $self->_build_entity_json($expression_uri, \%by_subject, \%entity_types);
+    }
+
+    if ($manifestation_uri) {
+        $result->{manifestation} = $self->_build_entity_json($manifestation_uri, \%by_subject, \%entity_types);
+    }
+
+    if ($item_uri) {
+        $result->{item} = $self->_build_entity_json($item_uri, \%by_subject, \%entity_types);
+    }
+
+    if (@agent_uris) {
+        $result->{agents} = [
+            map { $self->_build_entity_json($_, \%by_subject, \%entity_types) } @agent_uris
+        ];
+    }
+
+    if (@subject_uris) {
+        $result->{subjects} = [
+            map { $self->_build_entity_json($_, \%by_subject, \%entity_types) } @subject_uris
+        ];
+    }
+
+    # If no structured entities found, return all subjects as a flat graph
+    unless ($result->{work} || $result->{expression} || $result->{manifestation}) {
+        my @all_entities;
+        for my $uri (sort keys %by_subject) {
+            push @all_entities, $self->_build_entity_json($uri, \%by_subject, \%entity_types);
+        }
+        $result->{entities} = \@all_entities;
+    }
+
+    return JSON->new->utf8->pretty->encode($result);
+}
+
+=head2 _build_entity_json
+
+    Builds a structured JSON hash for a single RDF entity (subject).
+
+=cut
+
+sub _build_entity_json {
+    my ($self, $subject_uri, $by_subject, $entity_types) = @_;
+
+    my $entity = {
+        uri => $subject_uri,
+    };
+
+    # Add types
+    if ($entity_types->{$subject_uri} && @{$entity_types->{$subject_uri}}) {
+        $entity->{types} = $entity_types->{$subject_uri};
+    }
+
+    my $triples = $by_subject->{$subject_uri} || [];
+
+    foreach my $t (@$triples) {
+        my $pred = $t->{predicate};
+        next if $pred =~ /rdf:type$/; # Already handled
+
+        # Extract local name from predicate URI
+        my ($localname) = $pred =~ m{[/#]([^/#]+)$};
+        next unless $localname;
+
+        # Determine the JSON key
+        my $key = $PREDICATE_KEY{$localname} || $localname;
+
+        # For URI objects, build a reference
+        my $value;
+        if ($t->{object_type} eq 'uri') {
+            $value = { uri => $t->{object} };
+        } else {
+            $value = $t->{object};
+            if ($t->{lang}) {
+                $value = { value => $t->{object}, language => $t->{lang} };
+            } elsif ($t->{datatype}) {
+                $value = { value => $t->{object}, datatype => $t->{datatype} };
+            }
+        }
+
+        # Handle nested entities: if the object is itself a subject with triples,
+        # build a nested entity representation
+        if ($t->{object_type} eq 'uri' && $by_subject->{$t->{object}}) {
+            my $nested = $self->_build_entity_json($t->{object}, $by_subject, $entity_types);
+            $value = $nested;
+        }
+
+        # Add to entity, handling arrays
+        if (exists $entity->{$key}) {
+            if (ref $entity->{$key} eq 'ARRAY') {
+                push @{$entity->{$key}}, $value;
+            } else {
+                $entity->{$key} = [$entity->{$key}, $value];
+            }
+        } else {
+            $entity->{$key} = $value;
+        }
+    }
+
+    return $entity;
 }
 
 =head2 _toJsonLd

@@ -8,6 +8,8 @@ use MARC::File::XML;
 use XML::LibXML;
 use XML::LibXSLT;
 use File::Basename;
+use JSON;
+use Encode;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping;
 
@@ -575,6 +577,309 @@ sub convert_record_with_xslt {
     );
 
     return $stylesheet->output_as_bytes($results);
+}
+
+sub rdf_to_json {
+    my ($self, $rdfxml, %options) = @_;
+
+    return '{}' unless $rdfxml;
+
+    # Decode raw bytes to Perl characters if needed (UTF-8 flag is off for raw bytes)
+    if (!utf8::is_utf8($rdfxml)) {
+        eval { $rdfxml = Encode::decode('UTF-8', $rdfxml, Encode::FB_CROAK) };
+        if ($@) {
+            # Fallback: try Latin-1 if UTF-8 fails
+            eval { $rdfxml = Encode::decode('Latin-1', $rdfxml) };
+        }
+    }
+
+    my $parser = XML::LibXML->new();
+    my $doc = eval { $parser->parse_string($rdfxml) };
+    if ($@ || !$doc) {
+        warn "Failed to parse RDF/XML: $@";
+        return '{}';
+    }
+
+    my $root = $doc->documentElement();
+
+    # Register all namespaces from the document for XPath queries
+    my $xpc = XML::LibXML::XPathContext->new($root);
+    my %registered_ns;
+    for my $ns ($root->getNamespaces()) {
+        my ($prefix, $uri) = ($ns->getLocalName(), $ns->getValue());
+        next unless $prefix;
+        $xpc->registerNs($prefix, $uri);
+        $registered_ns{$prefix} = $uri;
+    }
+
+    # Ensure common BIBFRAME namespaces are registered
+    my @default_ns = (
+        ['bf',      'http://id.loc.gov/ontologies/bibframe/'],
+        ['bflc',    'http://id.loc.gov/ontologies/bflc/'],
+        ['rdf',     'http://www.w3.org/1999/02/22-rdf-syntax-ns#'],
+        ['rdfs',    'http://www.w3.org/2000/01/rdf-schema#'],
+        ['dcterms', 'http://purl.org/dc/terms/'],
+        ['skos',    'http://www.w3.org/2004/02/skos/core#'],
+        ['foaf',    'http://xmlns.com/foaf/0.1/'],
+        ['owl',     'http://www.w3.org/2002/07/owl#'],
+        ['cc',      'http://creativecommons.org/ns#'],
+    );
+    for my $ns_pair (@default_ns) {
+        my ($pfx, $uri) = @$ns_pair;
+        unless ($registered_ns{$pfx}) {
+            $xpc->registerNs($pfx, $uri);
+            $registered_ns{$pfx} = $uri;
+        }
+    }
+
+    # Namespace prefix map for readable output
+    my %ns_map = reverse %registered_ns;  # uri -> prefix
+
+    # Collect all top-level BIBFRAME resources
+    my %resources;  # uri -> { types => [...], properties => { name => [...] } }
+
+    # Find all bf:Work, bf:Instance, etc.
+    for my $bf_type (qw(Work Instance Expression Item)) {
+        my @nodes = $xpc->findnodes("//*[local-name()='$bf_type'][\@rdf:about]");
+        for my $node (@nodes) {
+            my $uri = $node->getAttribute('rdf:about') || $node->getAttribute('rdf:ID') || '';
+            next unless $uri;
+
+            my $res = $resources{$uri} ||= { uri => $uri, types => [], properties => {} };
+            push @{$res->{types}}, $bf_type unless grep { $_ eq $bf_type } @{$res->{types}};
+
+            # Extract all child elements as properties
+            for my $child ($node->childNodes()) {
+                next unless $child->nodeType() == 1;  # XML_ELEMENT_NODE
+                $self->_extract_rdf_property($child, $res, \%ns_map, \%resources);
+            }
+        }
+    }
+
+    # Also find Agent, Topic, and other typed resources
+    for my $other_type (qw(Agent Person Organization Meeting Topic Language Title Content
+                           ClassificationLcc ClassificationDdc Status Source
+                           AdminMetadata Illustration SupplementaryContent)) {
+        my @nodes = $xpc->findnodes("//*[local-name()='$other_type'][\@rdf:about]");
+        for my $node (@nodes) {
+            my $uri = $node->getAttribute('rdf:about') || '';
+            next unless $uri;
+            next if $resources{$uri}; # already collected
+
+            my $res = $resources{$uri} ||= { uri => $uri, types => [], properties => {} };
+            push @{$res->{types}}, $other_type unless grep { $_ eq $other_type } @{$res->{types}};
+
+            for my $child ($node->childNodes()) {
+                next unless $child->nodeType() == 1;  # XML_ELEMENT_NODE
+                $self->_extract_rdf_property($child, $res, \%ns_map, \%resources);
+            }
+        }
+    }
+
+    # Classify resources into BIBFRAME categories
+    my ($work_res, $expression_res, $manifestation_res, $item_res);
+    my (@agent_res, @subject_res, @other_res);
+
+    for my $uri (keys %resources) {
+        my $r = $resources{$uri};
+        my @types = @{$r->{types}};
+        if (grep { $_ eq 'Work' } @types) {
+            $work_res = $r;
+        } elsif (grep { $_ eq 'Expression' } @types) {
+            $expression_res = $r;
+        } elsif (grep { $_ eq 'Instance' } @types) {
+            $manifestation_res = $r;
+        } elsif (grep { $_ eq 'Item' } @types) {
+            $item_res = $r;
+        } elsif (grep { /^(Agent|Person|Organization|Meeting)$/ } @types) {
+            push @agent_res, $r;
+        } elsif (grep { $_ eq 'Topic' } @types) {
+            push @subject_res, $r;
+        } else {
+            push @other_res, $r;
+        }
+    }
+
+    # Build final JSON structure
+    my $result = {};
+
+    $result->{work}          = $self->_resource_to_hash($work_res)          if $work_res;
+    $result->{expression}    = $self->_resource_to_hash($expression_res)    if $expression_res;
+    $result->{manifestation} = $self->_resource_to_hash($manifestation_res) if $manifestation_res;
+    $result->{item}          = $self->_resource_to_hash($item_res)          if $item_res;
+    $result->{agents}        = [ map { $self->_resource_to_hash($_) } @agent_res ]   if @agent_res;
+    $result->{subjects}      = [ map { $self->_resource_to_hash($_) } @subject_res ] if @subject_res;
+
+    if (@other_res) {
+        $result->{other} = [ map { $self->_resource_to_hash($_) } @other_res ];
+    }
+
+    # If no structured entities found, return all as flat list
+    unless ($result->{work} || $result->{expression} || $result->{manifestation}) {
+        my @all = map { $self->_resource_to_hash($_) }
+                  sort { ($a->{uri} || '') cmp ($b->{uri} || '') } values %resources;
+        $result->{entities} = \@all if @all;
+    }
+
+    return JSON->new->utf8->pretty->encode($result);
+}
+
+sub _extract_rdf_property {
+    my ($self, $child_node, $resource, $ns_map, $all_resources) = @_;
+
+    return unless $child_node && $resource;
+
+    my $localname = $child_node->localname() || $child_node->nodeName();
+    return unless $localname;
+
+    # Get the namespace URI for the predicate
+    my $ns_uri = $child_node->namespaceURI() || '';
+    my $pred_full = $ns_uri ? "$ns_uri$localname" : $localname;
+
+    # Check if the object is a blank node or URI resource
+    my $about = $child_node->getAttribute('rdf:about') || $child_node->getAttribute('rdf:resource');
+
+    my $value;
+    if ($about) {
+        # URI reference
+        $value = { uri => $about };
+
+        # If this resource has child elements, build nested entity
+        my @child_elements = grep { $_->nodeType() == 1 } $child_node->childNodes();
+        if (@child_elements) {
+            my $nested = { uri => $about, types => [], properties => {} };
+            for my $c (@child_elements) {
+                $self->_extract_rdf_property($c, $nested, $ns_map, $all_resources);
+            }
+            # Detect type from rdf:type children
+            for my $c (@child_elements) {
+                if (($c->localname() || '') eq 'type') {
+                    my $type_res = $c->getAttribute('rdf:resource');
+                    if ($type_res) {
+                        my ($tlocal) = $type_res =~ m{[/#]([^/#]+)$};
+                        push @{$nested->{types}}, $tlocal if $tlocal;
+                    }
+                }
+            }
+            $value = $nested;
+            $all_resources->{$about} = $nested if $about;
+        }
+    } elsif (my $datatype = $child_node->getAttribute('rdf:datatype')) {
+        # Literal with datatype
+        my $dt_text = _get_text_content($child_node);
+        $dt_text =~ s/^\s+|\s+$//g;
+        $value = { value => $dt_text, datatype => $datatype };
+    } elsif (my $lang = $child_node->getAttribute('xml:lang')) {
+        # Literal with language
+        my $lang_text = _get_text_content($child_node);
+        $lang_text =~ s/^\s+|\s+$//g;
+        $value = { value => $lang_text, language => $lang };
+    } else {
+        # Plain literal or blank node
+        my @children = grep { $_->nodeType() == 1 } $child_node->childNodes();
+
+        if (@children) {
+            # Has child elements - this is a blank node or typed resource
+            my $type_name = '';
+            my $child_props = {};
+
+            for my $c (@children) {
+                my $cln = $c->localname() || '';
+                if ($cln eq 'type') {
+                    my $tr = $c->getAttribute('rdf:resource');
+                    if ($tr) {
+                        my ($t) = $tr =~ m{[/#]([^/#]+)$};
+                        $type_name = $t if $t;
+                    }
+                } else {
+                    # Recursively extract nested properties
+                    my $cval;
+                    my $cabout = $c->getAttribute('rdf:about') || $c->getAttribute('rdf:resource');
+                    my @gc = grep { $_->nodeType() == 1 } $c->childNodes();
+                    if ($cabout) {
+                        $cval = { uri => $cabout };
+                        if (@gc) {
+                            my $nested = { uri => $cabout, types => [], properties => {} };
+                            for my $gc (@gc) {
+                                $self->_extract_rdf_property($gc, $nested, $ns_map, $all_resources);
+                            }
+                            $cval = $nested;
+                            $all_resources->{$cabout} = $nested;
+                        }
+                    } elsif (@gc) {
+                        # Blank node with child elements — recurse into them
+                        my $nested = { properties => {} };
+                        for my $gc (@gc) {
+                            $self->_extract_rdf_property($gc, $nested, $ns_map, $all_resources);
+                        }
+                        $cval = $nested;
+                    } else {
+                        $cval = _get_text_content($c);
+                        $cval =~ s/^\s+|\s+$//g;
+                        if (my $dt = $c->getAttribute('rdf:datatype')) {
+                            $cval = { value => $cval, datatype => $dt };
+                        }
+                        if (my $dl = $c->getAttribute('xml:lang')) {
+                            $cval = { value => $cval, language => $dl };
+                        }
+                    }
+                    $child_props->{$cln} //= [];
+                    push @{$child_props->{$cln}}, $cval;
+                }
+            }
+
+            $value = { properties => $child_props };
+            $value->{type} = $type_name if $type_name;
+        } else {
+            # Plain text literal
+            my $plain_text = _get_text_content($child_node);
+            $plain_text =~ s/^\s+|\s+$//g;
+            $value = $plain_text if length $plain_text;
+        }
+    }
+
+    return unless defined $value;
+
+    # Store the property
+    my $props = $resource->{properties} || {};
+    if (exists $props->{$localname}) {
+        if (ref $props->{$localname} eq 'ARRAY') {
+            push @{$props->{$localname}}, $value;
+        } else {
+            $props->{$localname} = [$props->{$localname}, $value];
+        }
+    } else {
+        $props->{$localname} = $value;
+    }
+    $resource->{properties} = $props;
+}
+
+sub _resource_to_hash {
+    my ($self, $resource) = @_;
+    return {} unless $resource;
+
+    my $out = { uri => $resource->{uri} };
+    $out->{types} = $resource->{types} if $resource->{types} && @{$resource->{types}};
+
+    if ($resource->{properties}) {
+        for my $key (sort keys %{$resource->{properties}}) {
+            $out->{$key} = $resource->{properties}{$key};
+        }
+    }
+
+    return $out;
+}
+
+sub _get_text_content {
+    my ($node) = @_;
+    return '' unless $node;
+    my $text = '';
+    for my $child ($node->childNodes()) {
+        if ($child->nodeType() == 3 || $child->nodeType() == 4) {  # TEXT_NODE or CDATA_SECTION_NODE
+            $text .= $child->data;
+        }
+    }
+    return $text;
 }
 
 sub _find_xslt_path {

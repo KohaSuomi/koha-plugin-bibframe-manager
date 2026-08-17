@@ -16,6 +16,8 @@
 
 use Modern::Perl;
 use Getopt::Long qw(GetOptions);
+use utf8;
+use open ':std', ':encoding(UTF-8)';
 use Pod::Usage;
 use FindBin qw($Bin);
 use C4::Context;
@@ -95,8 +97,8 @@ unless ($valid_formats{$format}) {
     die "Invalid format: $format. Valid formats are: " . join(', ', sort keys %valid_formats) . "\n";
 }
 
-if ($engine eq 'xslt' && $format ne 'turtle') {
-    warn "Warning: --format is ignored by the xslt engine (output is always RDF/XML)\n";
+if ($engine eq 'xslt' && $format ne 'turtle' && $format ne 'json') {
+    warn "Warning: --format=$format is not supported by the xslt engine (use turtle or json)\n";
 }
 
 # Resolve record selection into an SQL condition
@@ -173,7 +175,7 @@ if ($engine eq 'xslt') {
 sub convert_with_xslt {
     my ($rows) = @_;
 
-    my $output = $output_file || 'bibframe.rdf';
+    my $output = $output_file || ($format eq 'json' ? 'bibframe.json' : 'bibframe.rdf');
 
     my @records;
     my $skipped = 0;
@@ -221,7 +223,7 @@ sub convert_with_xslt {
 
     if ($dry_run) {
         print "Dry run: not writing $output\n" if $verbose;
-        print "Would convert $converted record(s) to BIBFRAME RDF/XML.\n";
+        print "Would convert $converted record(s) to BIBFRAME.\n";
         return;
     }
 
@@ -233,9 +235,12 @@ sub convert_with_xslt {
     print $fh $marcxml;
     close $fh;
 
+    # XSLT always produces RDF/XML; use a temp file as intermediate
+    my $rdfxml_output = ($format eq 'json') ? $output . '.rdfxml' : $output;
+
     my @cmd = ('xsltproc', '--stringparam', 'baseuri', $baseuri);
     push @cmd, ('--stringparam', 'idsource', $idsource) if defined $idsource;
-    push @cmd, ('-o', $output, $xsl, $tmpfile);
+    push @cmd, ('-o', $rdfxml_output, $xsl, $tmpfile);
 
     print "  cmd: @cmd\n" if $verbose;
 
@@ -245,8 +250,36 @@ sub convert_with_xslt {
         exit 1;
     }
 
-    print "BIBFRAME output written to $output\n";
-    print "  " . (-s $output) . " bytes\n" if $verbose;
+    print "RDF/XML written to $rdfxml_output\n" if $verbose;
+    print "  " . (-s $rdfxml_output) . " bytes\n" if $verbose;
+
+    # Convert RDF/XML to JSON if requested
+    if ($format eq 'json') {
+        print "  Converting RDF/XML to structured JSON...\n" if $verbose;
+
+        open my $rfh, '<:raw', $rdfxml_output
+            or die "Cannot read $rdfxml_output: $!\n";
+        my $rdfxml_bytes = do { local $/; <$rfh> };
+        close $rfh;
+
+        my $converter = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe->new();
+        my $json_str = $converter->rdf_to_json($rdfxml_bytes);
+
+        open my $jfh, '>:raw', $output
+            or die "Cannot write $output: $!\n";
+        print $jfh $json_str;
+        close $jfh;
+
+        # Clean up intermediate RDF/XML file
+        unlink $rdfxml_output unless $verbose;
+
+        print "  Structured JSON written to $output\n";
+        print "  " . (-s $output) . " bytes\n" if $verbose;
+    } else {
+        print "BIBFRAME output written to $output\n";
+        print "  " . (-s $output) . " bytes\n" if $verbose;
+    }
+
     if ($skipped) {
         print "  Skipped $skipped invalid record(s)\n";
     }
@@ -418,7 +451,9 @@ Skip the first N records.
 
 =item B<--format=FORMAT>
 
-Plugin engine only: turtle (default), json-ld, ntriples, rdfxml, json.
+Plugin engine: turtle (default), json-ld, ntriples, rdfxml, json.
+XSLT engine: turtle (default, RDF/XML output), json (structured JSON after
+RDF/XML conversion).
 
 =item B<--output=PATH>
 
@@ -486,6 +521,14 @@ Export a single record to RDF/XML with marc2bibframe2:
 Export a range of records with a custom URI stem:
 
   ./convert_marc_to_Bibframe.pl --range=100-200 --baseuri=http://mylibrary.org/
+
+Export a single record to structured JSON via XSLT:
+
+  ./convert_marc_to_Bibframe.pl --biblionumber=123 --format=json --output=123.json
+
+Export a range of records to structured JSON with verbose output:
+
+  ./convert_marc_to_Bibframe.pl --range=100-200 --format=json --output=records.json --verbose
 
 Convert all biblios to JSON-LD and store in the database:
 

@@ -169,9 +169,64 @@ sub convert {
             );
         }
 
+        # Determine conversion standard
+        my $standard = $body->{standard} || 'bffi';
+
         # Convert to Bibframe
         my $converter = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe->new();
-        
+
+        if ($standard eq 'loc') {
+            # Use LoC XSLT-based conversion
+            my $loc_format = $format eq 'json' ? 'json' : 'rdf-xml';
+            my $xslt_path = $body->{xslt_path} || undef;
+
+            my %xslt_opts = (
+                base_uri => $base_uri,
+            );
+            $xslt_opts{xslt_path} = $xslt_path if $xslt_path;
+
+            my $rdfxml = $converter->convert_record_with_xslt($marc_record, %xslt_opts);
+
+            unless ($rdfxml) {
+                return $c->render(
+                    status => 500,
+                    openapi => { error => 'XSLT conversion produced no output' }
+                );
+            }
+
+            # Convert to JSON if requested
+            my $formatted_output;
+            if ($format eq 'json') {
+                $formatted_output = $converter->rdf_to_json($rdfxml);
+            } else {
+                $formatted_output = $rdfxml;
+            }
+
+            # Save to database if requested
+            my $metadata_id = 0;
+            if ($save_to_db && $biblionumber) {
+                my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
+                $metadata_id = $db->saveBibframeMetadata(
+                    $biblionumber,
+                    [],
+                    format => $loc_format,
+                    schema => 'BIBFRAME'
+                );
+            }
+
+            return $c->render(
+                status => 200,
+                openapi => {
+                    formatted => $formatted_output,
+                    format => $loc_format,
+                    standard => 'loc',
+                    biblionumber => $biblionumber,
+                    metadata_id => $metadata_id,
+                    message => 'MARC21 record successfully converted to BIBFRAME via LoC XSLT'
+                }
+            );
+        }
+
         my $full_base_uri = $base_uri;
         $full_base_uri .= $biblionumber if $biblionumber;
         
@@ -188,7 +243,6 @@ sub convert {
         }
 
         # Format the output
-        my $formatted_output;
         my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
         my $formatted_output = $db->serializeTriples($triples, $format);
 
@@ -210,6 +264,7 @@ sub convert {
                 triples => $triples,
                 formatted => $formatted_output,
                 format => $format,
+                standard => $standard,
                 triple_count => scalar(@$triples),
                 biblionumber => $biblionumber,
                 metadata_id => $metadata_id,

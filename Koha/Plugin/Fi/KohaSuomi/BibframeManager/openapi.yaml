@@ -57,7 +57,15 @@
                 - json-ld
                 - ntriples
                 - rdf-xml
+                - json
               default: turtle
+            standard:
+              type: string
+              description: "Conversion standard: bffi (Finnish BFFI) or loc (LoC BIBFRAME 2.0 via XSLT)"
+              enum:
+                - bffi
+                - loc
+              default: bffi
             save_to_db:
               type: boolean
               description: Save to database (biblio_metadata table)
