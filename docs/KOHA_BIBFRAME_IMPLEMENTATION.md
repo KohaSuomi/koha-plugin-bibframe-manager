@@ -43,7 +43,7 @@ The Hybrid Plan **reuses Koha's existing tables** rather than replacing them:
 | `biblio` | Bibliographic records | Read via `biblio_id` foreign key |
 | `biblioitems` | Publication details (ISBN, publisher) | Read for MARC export |
 | `items` | Physical copies (barcode, location) | Read for BIBFRAME Item export |
-| `biblio_metadata` | MARC records | Read for MARC export; we no longer write BIBFRAME here |
+| `biblio_metadata` | MARC records | Read for MARC export |
 | `branches` | Library locations | Read for `heldBy` in BIBFRAME export |
 | `itemtypes` | Item type codes | Read for `bf:genreForm` mapping |
 
