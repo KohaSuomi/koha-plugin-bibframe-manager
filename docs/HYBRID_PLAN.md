@@ -14,12 +14,13 @@
 3. [Core Storage Layer (Plan B)](#core-storage-layer-plan-b)
 4. Summary Tables (Plan A)
 5. [Language and Translation Handling](#language-and-translation-handling)
-6. Component Parts Table (Plan A)
-7. Format Mappings Table (Plan B)
-8. Elasticsearch Integration
-9. Data Flow
-10. Query Examples
-11. Implementation Phases
+6. [Work Clustering & Human Review](#work-clustering--human-review)
+7. Component Parts Table (Plan A)
+8. Format Mappings Table (Plan B)
+9. Elasticsearch Integration
+10. Data Flow
+11. Query Examples
+12. Implementation Phases
 
 ---
 
@@ -382,6 +383,159 @@ WHERE lang.value_text = 'fin' AND orig.value_text = 'eng';
 
 ---
 
+## Work Clustering & Human Review
+
+### Problem
+
+Multiple MARC21 records can represent **different Expressions of the same intellectual Work**. To build a correct WEMI model, we must group records into Works. Example:
+
+```
+Harry Potter and the Philosopher's Stone  (eng, we have this record)
+Harry Potter ja viisasten kivi           (fin translation)
+Harry Potter och de vises sten           (swe translation)
+```
+
+These are **three Expressions of one Work**. But how do we know they belong together?
+
+### Decision Model: Deterministic Auto-Accept + Human Review
+
+We use a **tiered pipeline**. Deterministic rules auto-accept the clear majority; only genuinely ambiguous candidates go to a **human review queue** with batch approval. Human judgment is the final authority, which is the right call for authority control and data precision. An LLM-assisted tier may be built later as an optional extension, but the initial scope starts with **human approval only**.
+
+**Decision rules:**
+
+| # | Situation | Action |
+|---|-----------|--------|
+| 1 | Shared identifier (010 LCCN, 001/003, existing work URI) + creator | **Auto-accept** |
+| 2 | Uniform title (130/240) + normalized creator | **Auto-accept** |
+| 3 | Same-language identical normalized title + normalized creator | **Auto-accept** |
+| 4 | Same-language near-match (edit distance) + same creator | **Auto-accept** |
+| 5 | Explicit translation link (765/767, `translationOf`) | **Auto-accept** |
+| 6 | `is_translation=1` and `original_language` matches candidate work | **Auto-accept** |
+| 7 | Cross-language, no uniform title, no translation link | **Human review** |
+| 8 | Partial title / ambiguous creator match | **Human review** |
+
+### Candidate Review Queue Table
+
+Tier 3 (rules 7–8) produce candidate pairs stored in a dedicated table. Only these require human decision.
+
+```sql
+CREATE TABLE work_match_candidates (
+    id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    resource_a_id       BIGINT UNSIGNED NOT NULL,  -- FK to record_resources
+    resource_b_id       BIGINT UNSIGNED NOT NULL,
+    match_tier          TINYINT NOT NULL,          -- 3 (only tier-3 goes here)
+    match_evidence      JSON,                      -- title/creator/language comparison
+
+    status              ENUM('pending','accepted','rejected','skipped')
+                           DEFAULT 'pending',
+    review_note         VARCHAR(1024),
+    reviewed_by         VARCHAR(128),
+    reviewed_at         TIMESTAMP NULL,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Optional, for the future LLM original-title suggestion tier.
+    -- Never authoritative; only evidence shown to the reviewer.
+    suggested_original_title   VARCHAR(1024) NULL,
+    suggested_title_confidence DECIMAL(4,3)  NULL,
+
+    UNIQUE KEY (resource_a_id, resource_b_id),
+    KEY (status),
+    KEY (created_at),
+
+    CONSTRAINT fk_wmc_a FOREIGN KEY (resource_a_id) REFERENCES record_resources(id) ON DELETE CASCADE,
+    CONSTRAINT fk_wmc_b FOREIGN KEY (resource_b_id) REFERENCES record_resources(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### Batch Review Workflow
+
+1. **Candidate generation** runs periodically (or on-demand after a conversion run).
+2. Records that match by rules 1–6 are merged automatically; rules 7–8 become `work_match_candidates` rows with `status='pending'`.
+3. A **reviewer opens the queue**, filters by status/date, and sees candidates in batches of N (e.g., 20 at a time).
+4. For each candidate the UI shows side-by-side evidence (title, creator, language, uniform title, identifiers) plus the system's soft suggestion.
+5. The reviewer **approves or rejects the batch** (or individually), leaving a `review_note`.
+6. Accepted candidates are merged into a shared `Work`; rejected/skipped remain as separate Works.
+
+### Review UI (Koha Plugin)
+
+A web page in the plugin controller + template:
+
+**List view**
+- Table of `work_match_candidates` with `status='pending'`
+- Filters: by date range, by batch, by evidence type
+- Batch selection checkboxes
+
+**Detail view** (per candidate)
+- Two columns: Record A vs Record B
+- Fields shown: title, creator, language, original_language, uniform title, identifiers, format
+- Suggestion banner: "System suggests: likely same Work (evidence: ...)"
+- (Future) "System suggests original title: ..." hint when the LLM tier is enabled
+- Actions: **Accept as same Work** / **Reject** / **Skip** / **Back**
+
+**Batch actions**
+- "Accept all selected" / "Reject all selected" (with optional note)
+- Confirmation dialog before committing merges
+- Full audit trail (`reviewed_by`, `reviewed_at`, `review_note`)
+
+### Merging Into Works
+
+Once a candidate is accepted, the clustering logic:
+1. Creates (or reuses) a single `Work` row.
+2. Sets the Work's `original_language` from the expression with the earliest/original language.
+3. Links each accepted Expression to that Work via `record_links` (`hasExpression` / `expressionOf`).
+4. Rebuilds affected `record_work_summary` rows.
+
+### Why Human Approval (Not LLM)
+
+- **Precision:** merging the wrong records corrupts the Work tree; human judgment avoids false merges.
+- **Authority control:** library practice treats work-identity decisions as cataloguing decisions made by staff.
+- **Auditability:** every merge has a recorded decision for correction and reporting.
+- **Determinism:** same input always yields the same clustering; no model-drift between re-runs.
+
+> **Distinction:** The *merge decision* is always human. An LLM may assist only with **evidence**, never with the decision itself.
+
+### LLM-Assisted Original Title Suggestion (Low-Risk, Optional)
+
+Librarians cannot be expected to recognize original titles in all languages
+("Harry Potter ja viisasten kivi" vs "Harry Potter and the Philosopher's Stone").
+An LLM is well suited to this **because it only produces a suggestion** that is
+stored as evidence and shown to a human in the review queue — it never makes the
+merge decision, so a wrong guess cannot corrupt the Work tree.
+
+**Scope:** This is a **future, optional extension**. The initial build ships
+without it; the schema and UI are designed so it can be added later without redesign.
+
+**How it would fit (when built):**
+
+1. **Preprocessing:** for each Expression flagged `is_translation=1` without a
+   resolvable uniform title, send (title, creator, original_language) to the LLM.
+2. **Output:** a proposed `original_title` string + confidence score, stored on the
+   candidate as *suggested* evidence (never authoritative).
+3. **Review queue:** the suggestion appears in the side-by-side detail view
+   ("System suggests original title: ..." with a link to candidate Works sharing
+   that title).
+4. **Human confirmation:** the reviewer sees the LLM hint but still decides the
+   merge; if accepted, `original_title` may be promoted to the Work's title.
+
+**Storage:** a nullable `suggested_original_title` / `suggested_title_confidence`
+column on `work_match_candidates` (or on the Expression resource as a `suggested`
+property). Final decisions remain in human-controlled fields.
+
+**Guards:**
+- LLM output is never auto-written to the authoritative title.
+- Low-confidence suggestions are not even pre-filled into the queue — they just
+  surface as hints.
+- All LLM use is batch and auditable, consistent with authority-control practice.
+
+### Open Questions (Refine After Real Data)
+
+1. Confirm the actual `format`/`schema` values in `biblio_metadata` before writing the candidate SQL.
+2. Assess 130/240 population (using the earlier SQL) to determine how many records resolve in rules 2 vs fall to Tier 3.
+3. Decide the default oracle batch size and whether auto-accepted merges need audit visibility.
+4. If the original-title LLM extension is pursued: which languages matter most, and which provider/embedding model to use.
+
+---
+
 ## Component Parts Table (Plan A)
 
 Component parts (articles, chapters, issues) are the most common query pattern requiring typed columns. See `ANALYSIS_COMPONENT_PARTS.md` for full analysis.
@@ -526,6 +680,12 @@ BIBFRAME RDF ───→ RDF Parser ───┘    (dedup, extract,       reco
                                       link entities)        record_links          │                         record_manif_summary
                                                                                 │                         record_agent_summary
                                                                                 │
+                                                                                ├──→ Work Clusterer ──→ merge Expressions ──→ work_match_candidates
+                                                                                │       (rules 1–6 auto-merge,              (rules 7–8 pending)
+                                                                                │        7–8 → review queue)                        │
+                                                                                │                                           Human Review UI
+                                                                                │                                           (batch approve)
+                                                                                │
                                                                                 ├──→ Format Generator ──→ MARC21 Export
                                                                                 │   (reads summary tables)
                                                                                 │
@@ -538,6 +698,13 @@ BIBFRAME RDF ───→ RDF Parser ───┘    (dedup, extract,       reco
                                                                                 └──→ Component Parts Sync
                                                                                     (reads record_links)
 ```
+
+### Work Clustering Step (after storage)
+
+1. **Preprocess:** normalize titles, NACO-normalize creators, extract language + original_language + identifiers.
+2. **Auto-merge (rules 1–6):** shared identifier, uniform title, identical title, near-title, explicit translation link, `is_translation`+`original_language`.
+3. **Human review (rules 7–8):** cross-language / ambiguous candidates → `work_match_candidates` with `status='pending'`.
+4. **Merge on approval:** accepted candidates create/reuse a single `Work`, link Expressions, rebuild summaries.
 
 ### Writing Data
 
@@ -609,6 +776,33 @@ FROM record_links l
 WHERE l.source_resource_id IN (/* resource IDs from above */);
 ```
 
+### "Show all Expressions belonging to a Work cluster"
+
+```sql
+SELECT r.id, r.uri, r.label,
+       p_lang.value_text AS language
+FROM record_resources r
+JOIN record_links l ON l.target_resource_id = r.id
+LEFT JOIN record_properties p_lang
+       ON p_lang.resource_id = r.id AND p_lang.property_key = 'languageOfExpression'
+WHERE l.source_resource_id = /* the merged Work resource_id */
+  AND l.relationship_type = 'hasExpression'
+ORDER BY p_lang.value_text;
+```
+
+### "List open review queue (pending candidates)"
+
+```sql
+SELECT c.id, c.match_tier, c.created_at,
+       a.label AS title_a, b.label AS title_b
+FROM work_match_candidates c
+JOIN record_resources a ON c.resource_a_id = a.id
+JOIN record_resources b ON c.resource_b_id = b.id
+WHERE c.status = 'pending'
+ORDER BY c.created_at
+LIMIT 20;
+```
+
 ---
 
 ## Implementation Phases
@@ -628,6 +822,11 @@ WHERE l.source_resource_id IN (/* resource IDs from above */);
 | 11 | BIBFRAME generator | `Modules/BibframeGenerator.pm` — semantic store → RDF triples |
 | 12 | Elasticsearch sync | `Modules/SearchIndex.pm` — MariaDB → ES sync |
 | 13 | API updates | `BibframeController.pm` — query summary tables instead of `biblio_metadata` |
+| 14 | Match candidate DDL | Create `work_match_candidates` table |
+| 15 | Clustering engine | `Modules/WorkClusterer.pm` — deterministic rules 1–6 auto-merge; rules 7–8 produce candidates |
+| 16 | Review queue UI | Controller + template for batch human review of `work_match_candidates` |
+| 17 | Merge materialization | Accept → create/reuse Work, link Expressions, rebuild summaries |
+| 18 | *(Future, optional)* LLM original-title tier | Suggest `suggested_original_title` as evidence only; human still decides |
 
 ---
 
@@ -642,5 +841,6 @@ WHERE l.source_resource_id IN (/* resource IDs from above */);
 | Graph tables | Plan B | Groups resources into coherent descriptions |
 | Shared authority tables | Plan A (via summary) | Agent/subject dedup with fast browsing |
 | Language & translation handling | Plan A + B | Original language + is_translation flags for WEMI |
+| Work clustering & human review | New | Deterministic auto-merge + batch human-approval queue (no LLM) |
 | `biblio_id` naming | Plan A | Koha community convention |
 | `record_` prefix | Plan B | Format-agnostic naming |
