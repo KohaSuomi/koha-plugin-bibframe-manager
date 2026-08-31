@@ -13,12 +13,13 @@
 2. [Architecture Overview](#architecture-overview)
 3. [Core Storage Layer (Plan B)](#core-storage-layer-plan-b)
 4. Summary Tables (Plan A)
-5. Component Parts Table (Plan A)
-6. Format Mappings Table (Plan B)
-7. Elasticsearch Integration
-8. Data Flow
-9. Query Examples
-10. Implementation Phases
+5. [Language and Translation Handling](#language-and-translation-handling)
+6. Component Parts Table (Plan A)
+7. Format Mappings Table (Plan B)
+8. Elasticsearch Integration
+9. Data Flow
+10. Query Examples
+11. Implementation Phases
 
 ---
 
@@ -243,6 +244,140 @@ CREATE TABLE record_agent_summary (
     KEY (name_normalized(191)),
     CONSTRAINT fk_as_resource FOREIGN KEY (resource_id) REFERENCES record_resources(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+## Language and Translation Handling
+
+### Problem
+
+When converting MARC21 records to BIBFRAME WEMI (Work, Expression, Manifestation, Item), we need to determine:
+1. **What language is this expression in?** (MARC 041 $a or 008[35-37])
+2. **What is the original language of the work?** (MARC 041 $h if present)
+3. **Is this record a translation?** (compare expression language vs original language)
+
+### MARC21 Fields for Language Detection
+
+| Field | Positions/Subfields | Purpose | Example |
+|-------|---------------------|---------|---------|
+| **008** | 35-37 | Primary language of the record | `fin` for Finnish |
+| **041 $a** | Language of text | All languages present in the work | `fin`, `eng` |
+| **041 $h** | Original language | Source language (if translated) | `eng` for English original |
+| **041 $b** | Intermediate translation | Translation route | `eng` → `swe` → `fin` |
+| **041 indicator 1** | Translation flag | `1` = includes/is translation | |
+
+### Detection Algorithm
+
+```perl
+sub _detect_original_language {
+    my ($self, $marc_record) = @_;
+    
+    # Priority 1: MARC 041 $h (explicit original language)
+    if (my $field_041 = $marc_record->field('041')) {
+        if (my $subfield_h = $field_041->subfield('h')) {
+            return {
+                original_language => $subfield_h,
+                is_translation    => 1,
+                source           => '041$h',
+            };
+        }
+    }
+    
+    # Priority 2: MARC 008 positions 35-37 (main language)
+    if (my $field_008 = $marc_record->field('008')) {
+        my $data = $field_008->data();
+        if (length($data) >= 38) {
+            my $lang_008 = substr($data, 35, 3);
+            $lang_008 =~ s/\s+$//;
+            
+            # Check if 041 exists with different language → translation
+            my $is_translation = 0;
+            if (my $field_041 = $marc_record->field('041')) {
+                my @subfields_a = $field_041->subfield('a');
+                if (@subfields_a && $subfields_a[0] ne $lang_008) {
+                    $is_translation = 1;
+                }
+            }
+            
+            return {
+                original_language => $lang_008,
+                is_translation    => $is_translation,
+                source           => '008',
+            };
+        }
+    }
+    
+    # Fallback: no language detected
+    return {
+        original_language => undef,
+        is_translation    => 0,
+        source           => 'none',
+    };
+}
+```
+
+### Examples
+
+| MARC Record | 008[35-37] | 041 $a | 041 $h | Detected Original | Is Translation |
+|-------------|------------|--------|--------|-------------------|----------------|
+| Aleksis Kivi - Seitsemän veljestä | `fin` | `fin` | - | `fin` | No |
+| Harry Potter ja viisasten kivi | `fin` | `fin` | `eng` | `eng` | Yes |
+| Harry Potter and the Philosopher's Stone | `eng` | `eng` | - | `eng` | No |
+| Finnish translation of Swedish book | `fin` | `fin` | `swe` | `swe` | Yes |
+| Bilingual Finnish/English text | `fin` | `fin eng` | - | `fin` | No |
+
+### Storage in Core Tables
+
+**record_properties** entries for language:
+
+```sql
+-- Expression language (from 041 $a or 008)
+INSERT INTO record_properties (resource_id, property_uri, property_key, value_type, value_text, value_lang)
+VALUES 
+    (expr_id, 'http://urn.fi/URN:NBN:fi:schema:bffi:languageOfExpression', 'languageOfExpression', 'literal', 'fin', 'fi');
+
+-- Original language (from 041 $h)
+INSERT INTO record_properties (resource_id, property_uri, property_key, value_type, value_text, value_lang)
+VALUES 
+    (expr_id, 'http://urn.fi/URN:NBN:fi:schema:bffi:originalLanguage', 'originalLanguage', 'literal', 'eng', 'en');
+
+-- Translation flag
+INSERT INTO record_properties (resource_id, property_uri, property_key, value_type, value_text)
+VALUES 
+    (expr_id, 'http://urn.fi/URN:NBN:fi:schema:bffi:isTranslation', 'isTranslation', 'literal', 'true');
+```
+
+**record_work_summary** (derived):
+
+```sql
+-- Work-level language = original language of the work
+UPDATE record_work_summary 
+SET language = 'eng'  -- from 041 $h or 008 fallback
+WHERE resource_id = work_id;
+```
+
+### Query Examples
+
+```sql
+-- Find all Finnish expressions
+SELECT r.uri, r.label
+FROM record_resources r
+JOIN record_properties p ON r.id = p.resource_id
+WHERE p.property_key = 'languageOfExpression' AND p.value_text = 'fin';
+
+-- Find all translations
+SELECT r.uri, r.label
+FROM record_resources r
+JOIN record_properties p ON r.id = p.resource_id
+WHERE p.property_key = 'isTranslation' AND p.value_text = 'true';
+
+-- Find Finnish translations of English works
+SELECT r.uri, r.label
+FROM record_resources r
+JOIN record_properties lang ON r.id = lang.resource_id AND lang.property_key = 'languageOfExpression'
+JOIN record_properties orig ON r.id = orig.resource_id AND orig.property_key = 'originalLanguage'
+WHERE lang.value_text = 'fin' AND orig.value_text = 'eng';
 ```
 
 ---
@@ -485,13 +620,14 @@ WHERE l.source_resource_id IN (/* resource IDs from above */);
 | 3 | Component parts DDL | Create `record_component_parts` |
 | 4 | Format mappings DDL | Create `record_format_mappings`, `record_graphs`, `record_graph_resources` |
 | 5 | Install/upgrade hooks | Add DDL to `BibframeManager.pm` `install()` and `upgrade()` |
-| 6 | Semantic normalizer | `Modules/SemanticStore.pm` — converts MARC21/BIBFRAME to semantic primitives |
-| 7 | Summary rebuilder | `Modules/SummaryRebuilder.pm` — rebuilds summary tables from core tables |
-| 8 | Component parts sync | Populate `record_component_parts` from `record_links` with `relationship_type = 'partOf'` |
-| 9 | MARC21 generator | `Modules/MarcGenerator.pm` — semantic store → MARC21 XML |
-| 10 | BIBFRAME generator | `Modules/BibframeGenerator.pm` — semantic store → RDF triples |
-| 11 | Elasticsearch sync | `Modules/SearchIndex.pm` — MariaDB → ES sync |
-| 12 | API updates | `BibframeController.pm` — query summary tables instead of `biblio_metadata` |
+| 6 | Language detection | Add `_detect_original_language()` to `Bibframe.pm` — extracts original language from MARC 041 $h or 008 |
+| 7 | Semantic normalizer | `Modules/SemanticStore.pm` — converts MARC21/BIBFRAME to semantic primitives |
+| 8 | Summary rebuilder | `Modules/SummaryRebuilder.pm` — rebuilds summary tables from core tables |
+| 9 | Component parts sync | Populate `record_component_parts` from `record_links` with `relationship_type = 'partOf'` |
+| 10 | MARC21 generator | `Modules/MarcGenerator.pm` — semantic store → MARC21 XML |
+| 11 | BIBFRAME generator | `Modules/BibframeGenerator.pm` — semantic store → RDF triples |
+| 12 | Elasticsearch sync | `Modules/SearchIndex.pm` — MariaDB → ES sync |
+| 13 | API updates | `BibframeController.pm` — query summary tables instead of `biblio_metadata` |
 
 ---
 
@@ -505,5 +641,6 @@ WHERE l.source_resource_id IN (/* resource IDs from above */);
 | Format mappings | Plan B | Multi-format export without schema changes |
 | Graph tables | Plan B | Groups resources into coherent descriptions |
 | Shared authority tables | Plan A (via summary) | Agent/subject dedup with fast browsing |
+| Language & translation handling | Plan A + B | Original language + is_translation flags for WEMI |
 | `biblio_id` naming | Plan A | Koha community convention |
 | `record_` prefix | Plan B | Format-agnostic naming |
