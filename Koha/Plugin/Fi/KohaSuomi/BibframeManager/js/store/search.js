@@ -47,6 +47,12 @@ export const useSearchStore = defineStore('search', {
             this.success = null;
         },
         
+        clearResult() {
+            this.currentRecord = null;
+            this.error = null;
+            this.success = null;
+        },
+        
         reset() {
             this.biblionumber = '';
             this.currentRecord = null;

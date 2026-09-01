@@ -3,7 +3,7 @@ const { onMounted } = Vue;
 import { useBibframeStore } from '../store/index.js';
 import { useEntityHelpers, useFileOperations } from '../composables/utils.js';
 import PropertySuggestions from './PropertySuggestions.js';
-import EntityCard from './EntityCard.js';
+import EntityNode from './EntityNode.js';
 import OutputViewer from './OutputViewer.js';
 import SearchRecords from './SearchRecords.js';
 
@@ -11,7 +11,7 @@ export default {
     name: 'BibframeApp',
     components: {
         PropertySuggestions,
-        EntityCard,
+        EntityNode,
         OutputViewer,
         SearchRecords
     },
@@ -30,13 +30,16 @@ export default {
     },
     template: `
         <div class="container-fluid mt-4">
-            <div class="row">
-                <div class="col-12">
+            <div class="row align-items-start">
+                <div class="col-md-7">
                     <h2><i class="fas fa-project-diagram"></i> Bibframe Record Builder</h2>
                     <p class="text-muted">Create Finnish BIBFRAME (Bibframe) records from scratch using the four-level RDA structure</p>
-                    <hr>
+                </div>
+                <div class="col-md-5">
+                    <SearchRecords />
                 </div>
             </div>
+            <hr>
 
             <!-- Alerts -->
             <div class="row" v-if="store.error">
@@ -57,14 +60,9 @@ export default {
                 </div>
             </div>
 
+            <!-- Main Content -->
             <div class="row">
-                <!-- Left Sidebar-->
-                <div class="col-md-3">
-                    <SearchRecords />
-                </div>
-
-                <!-- Main Content -->
-                <div class="col-md-9">
+                <div class="col-12">
                     <!-- Configuration Section -->
                     <div class="card mb-4">
                         <div class="card-body">
@@ -91,27 +89,12 @@ export default {
                         </div>
                     </div>
 
-                    <!-- Add Entity Buttons -->
-                    <div class="entity-type-selector">
+                    <!-- Add Work (root) -->
+                    <div class="entity-type-selector" v-if="!store.hasWork">
                         <div class="entity-type-btn" @click="store.addEntity('work')">
                             <i class="fas fa-book fa-2x text-primary"></i>
                             <h5>Work</h5>
-                            <small>Abstract creation</small>
-                        </div>
-                        <div class="entity-type-btn" @click="store.addEntity('expression')">
-                            <i class="fas fa-file-alt fa-2x text-success"></i>
-                            <h5>Expression</h5>
-                            <small>Specific realization</small>
-                        </div>
-                        <div class="entity-type-btn" @click="store.addEntity('manifestation')">
-                            <i class="fas fa-box fa-2x text-warning"></i>
-                            <h5>Manifestation</h5>
-                            <small>Physical embodiment</small>
-                        </div>
-                        <div class="entity-type-btn" @click="store.addEntity('item')">
-                            <i class="fas fa-barcode fa-2x text-danger"></i>
-                            <h5>Item</h5>
-                            <small>Single copy</small>
+                            <small>Abstract creation — Expressions are added from the Work</small>
                         </div>
                     </div>
 
@@ -121,11 +104,11 @@ export default {
                         <p>Click above to add your first entity</p>
                     </div>
 
-                    <EntityCard 
-                        v-for="(entity, index) in store.entities" 
-                        :key="index"
-                        :entity="entity"
-                        :entityIndex="index"
+                    <EntityNode
+                        v-for="(node, index) in store.getEntityHierarchy"
+                        :key="node.index !== undefined ? node.index : index"
+                        :node="node"
+                        :level="0"
                     />
 
                     <!-- Action Buttons -->

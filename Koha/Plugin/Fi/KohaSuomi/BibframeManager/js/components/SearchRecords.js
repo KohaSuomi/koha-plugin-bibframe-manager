@@ -11,8 +11,9 @@ export default {
             search.searchByBiblionumber();
         };
 
-        const handleConvert = () => {
-            store.convertRecord(search.currentRecord.biblio_id);
+        const handleConvert = async () => {
+            await store.convertRecord(search.currentRecord.biblio_id);
+            if (!store.error) search.clearResult();
         }
         
         return {
@@ -23,23 +24,20 @@ export default {
         };
     },
     template: `
-    <div class="sidebar">
-        <div class="mb-4">
-            <h4><i class="fas fa-search"></i> Search Records</h4>
-            
+    <div class="search-records">
             <!-- Error Alert -->
-            <div v-if="search.error" class="alert alert-danger alert-dismissible fade show" role="alert">
+            <div v-if="search.error" class="alert alert-danger alert-dismissible fade show py-2" role="alert">
                 <i class="fas fa-exclamation-triangle"></i> {{ search.error }}
                 <button type="button" class="btn-close" @click="search.clearError()"></button>
             </div>
             
             <!-- Success Alert -->
-            <div v-if="search.success" class="alert alert-success alert-dismissible fade show" role="alert">
+            <div v-if="search.success" class="alert alert-success alert-dismissible fade show py-2" role="alert">
                 <i class="fas fa-check-circle"></i> {{ search.success }}
                 <button type="button" class="btn-close" @click="search.clearSuccess()"></button>
             </div>
             
-            <form @submit.prevent="handleSearch" class="mb-3">
+            <form @submit.prevent="handleSearch" class="mb-2">
                 <div class="input-group">
                     <input 
                         v-model="search.biblionumber" 
@@ -50,38 +48,27 @@ export default {
                     />
                     <button type="submit" class="btn btn-primary" :disabled="search.loading">
                         <i class="fas" :class="search.loading ? 'fa-spinner fa-spin' : 'fa-search'"></i>
-                        {{ search.loading ? 'Loading...' : 'Load Record' }}
+                        {{ search.loading ? 'Loading...' : 'Load' }}
                     </button>
                 </div>
             </form>
             
             <!-- Display loaded record info -->
-            <div class="card">
-                <div class="card-body">
-                    <div v-if="search.currentRecord">
-                        <h5 class="card-title">
-                            <i class="fas fa-book"></i> Loaded Record
-                        </h5>
-                        <dl class="row mb-0">
-                            <dt class="col-sm-3">Biblionumber:</dt>
-                            <dd class="col-sm-9">{{ search.currentRecord.biblio_id }}</dd>
-                            
-                            <dt class="col-sm-3">Title:</dt>
-                            <dd class="col-sm-9">{{ search.currentRecord.title || 'N/A' }}</dd>
-                            
-                            <dt class="col-sm-3">Author:</dt>
-                            <dd class="col-sm-9">{{ search.currentRecord.author || 'N/A' }}</dd>
-                        </dl>
-                        <button @click="handleConvert" class="btn btn-sm btn-primary">
+            <div class="card" v-if="search.currentRecord">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="text-truncate me-2">
+                            <small>
+                                <strong>{{ search.currentRecord.title || 'N/A' }}</strong>
+                                <span v-if="search.currentRecord.author" class="text-muted"> — {{ search.currentRecord.author }}</span>
+                            </small>
+                        </div>
+                        <button @click="handleConvert" class="btn btn-sm btn-primary flex-shrink-0">
                             <i class="fas fa-plus"></i> Convert to Bibframe
                         </button>
                     </div>
-                    <div v-else class="text-muted">
-                        <i class="fas fa-info-circle"></i> No record loaded.
-                    </div>
                 </div>
             </div>
-        </div>
     </div>
     `
 };

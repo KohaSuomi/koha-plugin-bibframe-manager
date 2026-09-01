@@ -41,7 +41,78 @@ export const useBibframeStore = defineStore('bibframe', {
         
         hasEntities: (state) => state.entities.length > 0,
         
-        hasOutput: (state) => state.generatedOutput !== null
+        hasOutput: (state) => state.generatedOutput !== null,
+
+        hasWork: (state) => state.entities.some(ent => ent.type === 'work'),
+
+        // Build a fixed 4-level ladder: Work > Expression > Manifestation > Item
+        // Entities are partitioned by type; each Work is a root carrying its
+        // Expressions, which carry their Manifestations, which carry their Items.
+        // Children are spread evenly across the parents of the level directly
+        // above (linear interpolation), so nothing is dropped and the nesting
+        // stays balanced rather than clustering under the first parent.
+        getEntityHierarchy: (state) => {
+            const byType = { work: [], expression: [], manifestation: [], item: [] };
+            state.entities.forEach((entity, index) => {
+                const type = entity.type;
+                if (byType[type]) {
+                    byType[type].push({ entity, index });
+                }
+            });
+
+            // Spread children evenly across all parents using linear interpolation,
+            // so they distribute across the full width instead of clustering under
+            // the first parent when there are more parents than children.
+            const distribute = (children, parentCount) => {
+                const buckets = Array.from({ length: parentCount }, () => []);
+                if (children.length === 0 || parentCount === 0) return buckets;
+                children.forEach((child, i) => {
+                    const idx = Math.min(
+                        parentCount - 1,
+                        Math.floor((i * parentCount) / children.length)
+                    );
+                    buckets[idx].push(child);
+                });
+                return buckets;
+            };
+
+            const withChildren = (node, children) => ({ ...node, nodeIndex: 0, children });
+
+            // If no Works exist, fall back to top-level Expressions.
+            if (byType.work.length === 0) {
+                return byType.expression.map((e) => withChildren(e, []));
+            }
+
+            const works = byType.work.map((work, i) => {
+                const linkedExpressions = byType.expression.length
+                    ? distribute(byType.expression, byType.work.length)[i]
+                    : [];
+                const expressionChildren = linkedExpressions.map((e) => {
+                    const eGlobal = byType.expression.findIndex(x => x.index === e.index);
+                    const linkedManifestations = byType.manifestation.length
+                        ? distribute(byType.manifestation, byType.expression.length)[eGlobal]
+                        : [];
+                    const manifestationChildren = linkedManifestations.map((m) => {
+                        const mGlobal = byType.manifestation.findIndex(x => x.index === m.index);
+                        const linkedItems = byType.item.length
+                            ? distribute(byType.item, byType.manifestation.length)[mGlobal]
+                            : [];
+                        const itemNodes = linkedItems.map((it) => withChildren(it, []));
+                        const manNode = { ...m, children: itemNodes };
+                        manNode.nodeIndex = linkedManifestations.findIndex(x => x.index === m.index);
+                        return manNode;
+                    });
+                    const expNode = { ...e, children: manifestationChildren };
+                    expNode.nodeIndex = linkedExpressions.findIndex(x => x.index === e.index);
+                    return expNode;
+                });
+                const workNode = { ...work, children: expressionChildren };
+                workNode.nodeIndex = i;
+                return workNode;
+            });
+
+            return works;
+        }
     },
     
     actions: {

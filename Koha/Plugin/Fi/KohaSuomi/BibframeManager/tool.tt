@@ -20,6 +20,46 @@
             background-color: #fff;
             transition: all 0.3s;
         }
+        .entity-node {
+            margin-bottom: 20px;
+        }
+        .entity-children {
+            margin-left: 28px;
+            padding-left: 24px;
+            border-left: 3px solid #adb5bd;
+            margin-top: 8px;
+        }
+        .entity-children-heading {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6c757d;
+            margin-bottom: 12px;
+            padding: 4px 10px;
+            background-color: #f1f3f5;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .add-child-btn {
+            text-transform: none;
+            letter-spacing: normal;
+            font-weight: 500;
+            padding: 2px 8px;
+            font-size: 12px;
+        }
+        /* Distinct left accent per level so the tier reads at a glance */
+        .entity-child-level1 .entity-card.expression {
+            border-left: 7px solid #28a745;
+        }
+        .entity-child-level2 .entity-card.manifestation {
+            border-left: 7px solid #ffc107;
+        }
+        .entity-child-level3 .entity-card.item {
+            border-left: 7px solid #dc3545;
+        }
         .entity-card:hover {
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
@@ -92,13 +132,6 @@
         .entity-type-btn:hover {
             border-color: #007bff;
             background-color: #f8f9fa;
-        }
-        .sidebar {
-            background-color: #f8f9fa;
-            border-right: 1px solid #dee2e6;
-            padding: 20px;
-            max-height: calc(100vh - 200px);
-            overflow-y: auto;
         }
         .property-suggestion {
             cursor: pointer;
