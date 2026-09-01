@@ -170,6 +170,13 @@ CREATE TABLE record_work_summary (
     language        VARCHAR(32),
     work_type       VARCHAR(128),
 
+    -- Original record identification
+    original_language  VARCHAR(32),       -- source language of the Work
+    original_resource_id BIGINT UNSIGNED NULL,  -- local Expression that is the original; NULL if not local
+    original_pending   TINYINT DEFAULT 0, -- 1 = translations linked, original not yet in DB
+    original_external_id  VARCHAR(512),   -- external source ref (OCLC/LCCN/URI) when original not local
+    original_external_source VARCHAR(128) -- 'oclc','loc','fennica', etc.
+
     -- Denormalized from properties for fast queries
     contributor_count   INT UNSIGNED DEFAULT 0,
     subject_count       INT UNSIGNED DEFAULT 0,
@@ -182,8 +189,10 @@ CREATE TABLE record_work_summary (
     KEY (biblio_id),
     KEY (title_normalized(191)),
     KEY (language),
+    KEY (original_language),
     KEY (work_type),
-    CONSTRAINT fk_ws_resource FOREIGN KEY (resource_id) REFERENCES record_resources(id) ON DELETE CASCADE
+    CONSTRAINT fk_ws_resource FOREIGN KEY (resource_id) REFERENCES record_resources(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ws_orig FOREIGN KEY (original_resource_id) REFERENCES record_resources(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -405,33 +414,56 @@ We use a **tiered pipeline**. Deterministic rules auto-accept the clear majority
 
 | # | Situation | Action |
 |---|-----------|--------|
-| 1 | Shared identifier (010 LCCN, 001/003, existing work URI) + creator | **Auto-accept** |
-| 2 | Uniform title (130/240) + normalized creator | **Auto-accept** |
-| 3 | Same-language identical normalized title + normalized creator | **Auto-accept** |
-| 4 | Same-language near-match (edit distance) + same creator | **Auto-accept** |
-| 5 | Explicit translation link (765/767, `translationOf`) | **Auto-accept** |
-| 6 | `is_translation=1` and `original_language` matches candidate work | **Auto-accept** |
+| 1 | Shared identifier (010 LCCN, 001/003, existing work URI) + creator + same `work_type` + date-compatible | **Auto-accept** |
+| 2 | Uniform title (130/240) + normalized creator + same `work_type` | **Auto-accept** |
+| 3 | Same-language identical normalized title + normalized creator + same `work_type` + date-compatible | **Auto-accept** |
+| 4 | Same-language near-match (edit distance) + same creator + same `work_type` + date-compatible | **Auto-accept** |
+| 5 | Explicit translation link (`translationof` / `translatedas`), **not** an adaptation | **Auto-accept** |
+| 6 | `is_translation=1` and `original_language` matches candidate work, **no adaptation marker** | **Auto-accept** |
 | 7 | Cross-language, no uniform title, no translation link | **Human review** |
-| 8 | Partial title / ambiguous creator match | **Human review** |
+| 8 | Partial title / ambiguous creator / anonymous / no creator | **Human review** |
+| 9 | **Adaptation** relationship detected (film/derivative, `adaptationof`) | **Do not merge** — link as related Work; human-only if genuinely ambiguous |
+| 10 | **`work_type` mismatch** (serial vs monograph) | **Do not merge** |
+| 11 | Title + creator match but **date/edition conflict** | **Human review** |
+| 12 | **Creator identity uncertain** (same name, ambiguous date/identifier) | **Human review** |
+
+> **Confirmations (defaults):**
+> - **Adaptations** are never auto-merged; they become separate Works linked via `adaptationof`/related-Work relationship. If a relationship is genuinely ambiguous, it goes to the human queue.
+> - **Date compatibility** uses a broad tolerance (e.g., publication dates within the same era / reasonable window, or same stemming edition). Exact-year equality is *not* required; an obviously conflicting date on an otherwise identical title+creator forces human review.
+> - **Reversal/un-merge** in v1 is a simple "mark reverted + note" record with a stored snapshot for restoring prior separate-Work state.
 
 ### Candidate Review Queue Table
 
-Tier 3 (rules 7–8) produce candidate pairs stored in a dedicated table. Only these require human decision.
+Rules 7, 8, 11, 12 (cross-language, ambiguous creator/anonymous, date/edition
+conflict, creator identity uncertain) produce candidate pairs stored in a dedicated
+table. Rules 9 and 10 (adaptation, work_type mismatch) are hard blocks and do not
+enter the queue. Only candidates reaching the queue require human decision.
 
 ```sql
 CREATE TABLE work_match_candidates (
     id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     resource_a_id       BIGINT UNSIGNED NOT NULL,  -- FK to record_resources
     resource_b_id       BIGINT UNSIGNED NOT NULL,
-    match_tier          TINYINT NOT NULL,          -- 3 (only tier-3 goes here)
-    match_evidence      JSON,                      -- title/creator/language comparison
+    match_tier          TINYINT NOT NULL,          -- tier that generated this candidate
 
-    status              ENUM('pending','accepted','rejected','skipped')
+    -- Classification of the relationship (drives rule 9/10 gates)
+    relationship_type   ENUM('translation','edition','adaptation','unknown')
+                           DEFAULT 'unknown',
+    work_type_a         VARCHAR(32),               -- 'serial' | 'monograph'
+    work_type_b         VARCHAR(32),
+
+    match_evidence      JSON,                      -- title/creator/language/date/edition comparison
+
+    status              ENUM('pending','accepted','rejected','skipped','reverted')
                            DEFAULT 'pending',
     review_note         VARCHAR(1024),
     reviewed_by         VARCHAR(128),
     reviewed_at         TIMESTAMP NULL,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Reversal (un-merge) support
+    reverted_from       BIGINT UNSIGNED NULL,      -- FK to the merged work_match_candidates.id
+    work_snapshot       JSON,                      -- prior separate-Work state for restore
 
     -- Optional, for the future LLM original-title suggestion tier.
     -- Never authoritative; only evidence shown to the reviewer.
@@ -441,6 +473,7 @@ CREATE TABLE work_match_candidates (
     UNIQUE KEY (resource_a_id, resource_b_id),
     KEY (status),
     KEY (created_at),
+    KEY (relationship_type),
 
     CONSTRAINT fk_wmc_a FOREIGN KEY (resource_a_id) REFERENCES record_resources(id) ON DELETE CASCADE,
     CONSTRAINT fk_wmc_b FOREIGN KEY (resource_b_id) REFERENCES record_resources(id) ON DELETE CASCADE
@@ -467,14 +500,19 @@ A web page in the plugin controller + template:
 
 **Detail view** (per candidate)
 - Two columns: Record A vs Record B
-- Fields shown: title, creator, language, original_language, uniform title, identifiers, format
+- Fields shown: title, creator (with authority signals: date, ISNI/VIAF), language,
+  original_language, uniform title, identifiers, format, work_type (serial/monograph),
+  publication date, edition statement
+- Badge showing `relationship_type` (translation / edition / adaptation / unknown)
 - Suggestion banner: "System suggests: likely same Work (evidence: ...)"
 - (Future) "System suggests original title: ..." hint when the LLM tier is enabled
-- Actions: **Accept as same Work** / **Reject** / **Skip** / **Back**
+- Actions: **Accept as same Work** / **Reject** / **Reject as different Work (adaptation)** / **Skip** / **Back**
 
 **Batch actions**
 - "Accept all selected" / "Reject all selected" (with optional note)
 - Confirmation dialog before committing merges
+- On already-merged pairs: "Un-merge" action, which creates a `reverted` record
+  with `work_snapshot` for restore
 - Full audit trail (`reviewed_by`, `reviewed_at`, `review_note`)
 
 ### Merging Into Works
@@ -484,6 +522,126 @@ Once a candidate is accepted, the clustering logic:
 2. Sets the Work's `original_language` from the expression with the earliest/original language.
 3. Links each accepted Expression to that Work via `record_links` (`hasExpression` / `expressionOf`).
 4. Rebuilds affected `record_work_summary` rows.
+
+### Identifying the Original Record
+
+For each Work cluster we must determine which Expression (if any) is the
+**original record** — the record whose own language is the Work's original
+language and which is not a translation. The original record may:
+- **A.** Already exist in the local database, or
+- **B.** Need to be found in an **external source** (OCLC, Library of Congress,
+  Fennica / National Library of Finland, etc.) because it will likely never be
+  imported locally.
+
+**Decision rules (in priority order):**
+
+| # | Signal | Meaning | Result |
+|---|--------|---------|--------|
+| 1 | Local Expression `language == original_language` AND `is_translation == 0` | Record in the Work's source language, not a translation | **This is the original (local)** → `original_resource_id` set |
+| 2 | Local Expression has no `041 $h`, and its language equals the cluster's `original_language` | Language matches source, no translation marker | **This is the original (local)** → `original_resource_id` set |
+| 3 | Local Expression `is_translation == 1` (own language differs from `original_language`) | Record is a translation | **Not the original** |
+| 4 | Only translations exist locally, but the original is matched/found **externally** | Looked up via identifier / uniform title in an external authority/source | **Original found externally** → `original_external_id` set |
+| 5 | Only translations exist locally, no external match yet | Original not yet identified anywhere | **No original** → `original_pending = 1` |
+
+**The MARC evidence behind each Expression's "own language" vs "original language":**
+
+- **own language** = `041 $a` (or `008[35-37]` fallback) — the language of this record's text
+- **original_language** = `041 $h` (or, when absent, inferred from the 130/240 uniform title language, or the fallback rule above)
+- **is_translation** = `1` when `own language != original_language`
+
+**Work-level original_language resolution** (used by rules 1–2):
+1. If any translation has `041 $h` → that value is the Work's `original_language` (highest confidence).
+2. Else if records share a uniform title (130/240) whose language differs → that language.
+3. Else if all records share the same `own language` → that language, `is_translation=0` (no translations).
+4. Else → `original_pending = 1` until an authoritative original is found.
+
+**External original lookup (rule 4):** when the local DB has only translations,
+search an **external source** for the original record using the strongest available
+fingerprint (identifier like LCCN/OCLC/ISBN when present, else uniform title +
+creator). Match candidates are surfaced in the **same human review queue** so a
+cataloger confirms before the external record is linked. The external record is
+stored as a **Work/Expression resource** with `source_format='imported'` and
+`source_record` pointing to its external origin — it need *not* be a local biblio.
+
+**Late-arriving / external originals:** Both a locally imported original and an
+externally matched original satisfy the same `original_pending` resolution. Because
+clustering is re-runnable, either kind is attached automatically on the next pass,
+setting `original_resource_id` (local) or `original_external_id` (external) and
+clearing `original_pending`.
+
+### Adaptations vs. Translations
+
+A **translation** of a Work is the *same* Work in a different language, so it should
+merge. An **adaptation** (film, abridgment-as-new-work, derivative) is a *different*
+FRBR Work, even though it is based on another Work — it must **not** merge.
+
+The `relationship_type` on `work_match_candidates` classifies each candidate:
+
+| MARC signal | Relationship | Merge? |
+|-------------|--------------|--------|
+| 765 → `translationof` | translation | merge |
+| 767 → `translatedas` | translation | merge |
+| 775 → `otheredition` | same Work, different Expression | merge |
+| 758 / 700 `$i` "is adaptation of" / `adaptationof` | **different Work (adaptation)** | **do not merge** |
+| 700 `$i` "is a film adaptation of" | **different Work** | **do not merge** |
+
+**Refined rule 6:** a translation merge is auto-accepted only when the relationship
+is explicitly a translation *and* no adaptation marker is present. Any adaptation
+signal forces the candidate into rule 9 (**do not merge**) or, if ambiguous, the
+human queue.
+
+### Same Title, Different Work (false positives)
+
+Distinct Works can share a title+creator ("1984", same-title-different-author,
+re-editions). To prevent false auto-merges, rules 1, 3, 4 require date compatibility
+and matching `work_type`, and include the edition statement (250) as evidence:
+
+| Disambiguator | Source | Role |
+|---------------|--------|------|
+| Work type | Leader/07 + 008/21 (`i`/`s`=serial, `a`=monograph) | must match to auto-accept |
+| Publication date | 264 `$c` / 008[07-10] / 008[11-14] | conflicting eras force human review |
+| Edition statement | 250 | shown as corroborating evidence |
+| Series/ISSN | 490/440/022 | serial identity vs monograph |
+
+### Serial vs. Monograph (Work boundary)
+
+Serials and monographs behave differently and must not be merged with each other:
+
+- `work_type` is derived from **Leader/07 and 008/21**: `i`/`s` = continuing resource,
+  `a` = monograph.
+- **Never auto-merge a serial with a monograph** (rule 10).
+- For serials, Work identity is keyed on **ISSN + title** (the journal is one Work),
+  not on individual issues. Issues are `partOf` the host Work via
+  `record_component_parts`, not sibling Works.
+- Multi-volume monographs are a single Work with `partNumber`/`partName` expressions.
+
+### Creator Ambiguity (authority matching)
+
+Creator identity must be resolved before clustering is trusted; authority matching
+reuses `record_agent_summary` + the agent dedup pattern:
+
+- NACO-normalize creator names (`name_normalized`).
+- Group variant spellings of the same person into an **authority cluster**.
+- **Same normalized name alone is NOT sufficient** for auto-accept. Require at least
+  one corroborating signal:
+  - shared creator dates (100 `$d` birth/death), **or**
+  - shared identifier (ISNI, VIAF, LC authority number), **or**
+  - a matching uniform title / title.
+- **Anonymous / no-creator works** are never auto-accepted; title-only matching is
+  too risky (rule 8 → human review).
+- **Distinguish distinct authors with identical names** (e.g., two "Smith, John")
+  via date/identifier; if unresolved → human review.
+
+### Transitive Merge & Reversal
+
+- **Transitivity:** when A~B and B~C both match, the system does not force a
+  decision on A vs C. It clusters A, B, C together only if every edge leading to the
+  same Work is confirmed. If the match chain is inconsistent (A~B, B~C, but A≠C),
+  the conflict is surfaced to the reviewer rather than auto-ingested.
+- **Reversal (un-merge):** if a merge is later found wrong, a `status='reverted'`
+  row is created with `reverted_from` pointing to the original decision and a
+  `work_snapshot` (JSON) capturing the prior separate-Work state. This enables a
+  clean restore and preserves the audit trail.
 
 ### Why Human Approval (Not LLM)
 
@@ -533,6 +691,12 @@ property). Final decisions remain in human-controlled fields.
 2. Assess 130/240 population (using the earlier SQL) to determine how many records resolve in rules 2 vs fall to Tier 3.
 3. Decide the default oracle batch size and whether auto-accepted merges need audit visibility.
 4. If the original-title LLM extension is pursued: which languages matter most, and which provider/embedding model to use.
+5. **External original lookup:** which external sources are reachable (OCLC, Library of Congress, Fennica / National Library of Finland) and what protocols (SRU/Z39.50/z3950 API)? Decide whether to store the external record as a linked Work/Expression resource or only as a link reference.
+6. **External identifier policy:** which identifiers (LCCN, OCLC number, ISBN) are reliable enough to seed the external lookup without false matches.
+7. **Adaptation detection:** how common are `adaptationof` / film-adaptation relationships (758, 700 `$i`) in the data, and how aggressively should the adaptation gate act? (Check the ratio via the earlier ExtractValue-style queries.)
+8. **Mercy of date tolerance:** what is an acceptable publication-date window for treating identical title+creator as the same Work, before forcing human review?
+9. **Creator authority coverage:** how many records have creator dates (100 `$d`) or identifiers (ISNI/VIAF) available to corroborate authority identity, versus relying only on normalized name?
+10. **Serial fraction:** what share of records are continuing resources (Leader/07 or 008/21 `i`/`s`)? This determines how much serial-specific Work boundary logic matters.
 
 ---
 
@@ -823,10 +987,12 @@ LIMIT 20;
 | 12 | Elasticsearch sync | `Modules/SearchIndex.pm` — MariaDB → ES sync |
 | 13 | API updates | `BibframeController.pm` — query summary tables instead of `biblio_metadata` |
 | 14 | Match candidate DDL | Create `work_match_candidates` table |
-| 15 | Clustering engine | `Modules/WorkClusterer.pm` — deterministic rules 1–6 auto-merge; rules 7–8 produce candidates |
-| 16 | Review queue UI | Controller + template for batch human review of `work_match_candidates` |
-| 17 | Merge materialization | Accept → create/reuse Work, link Expressions, rebuild summaries |
-| 18 | *(Future, optional)* LLM original-title tier | Suggest `suggested_original_title` as evidence only; human still decides |
+| 15 | Clustering engine | `Modules/WorkClusterer.pm` — deterministic rules 1–12 (incl. adaptation, work_type, date, creator-authority gates) auto-merge or route to review |
+| 16 | Review queue UI | Controller + template for batch human review of `work_match_candidates` (relationship_type, work_type, adaptation action) |
+| 17 | Merge materialization | Accept → create/reuse Work, link Expressions, rebuild summaries; support un-merge reversal |
+| 18 | External original lookup | `Modules/ExternalOriginal.pm` — query external sources (OCLC/LOC/Fennica) for rule-4 originals; surface matches in review queue |
+| 19 | Creator authority matcher | `Modules/AuthorityMatcher.pm` — cluster agents, corroborate identity via dates/ISNI/VIAF |
+| 20 | *(Future, optional)* LLM original-title tier | Suggest `suggested_original_title` as evidence only; human still decides |
 
 ---
 
