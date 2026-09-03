@@ -9,6 +9,7 @@ use base qw(Koha::Plugins::Base);
 use C4::Context;
 use utf8;
 use JSON;
+use File::Slurp;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe;
 
@@ -81,6 +82,28 @@ sub api_namespace {
 sub install() {
     my ( $self, $args ) = @_;
 
+    my $sql_dir = $self->mbf_dir() . '/sql';
+    my @sql_files = (
+        '01_core_tables.sql',
+        '02_summary_tables.sql',
+        '03_component_parts.sql',
+        '04_format_mappings_graphs.sql',
+    );
+
+    my $dbh = C4::Context->dbh;
+    for my $sql_file (@sql_files) {
+        my $sql_path = "$sql_dir/$sql_file";
+        my $sql_content = eval { read_file($sql_path) };
+        if ($@) {
+            warn "Failed to read SQL file $sql_path: $@";
+            return 0;
+        }
+        $dbh->do($sql_content) or do {
+            warn "Failed to execute SQL from $sql_file: " . $dbh->errstr;
+            return 0;
+        };
+    }
+
     return 1;
 }
 
@@ -88,6 +111,28 @@ sub install() {
 ## plugin is installed over an existing older version of a plugin
 sub upgrade {
     my ( $self, $args ) = @_;
+
+    my $sql_dir = $self->mbf_dir() . '/sql';
+    my @sql_files = (
+        '01_core_tables.sql',
+        '02_summary_tables.sql',
+        '03_component_parts.sql',
+        '04_format_mappings_graphs.sql',
+    );
+
+    my $dbh = C4::Context->dbh;
+    for my $sql_file (@sql_files) {
+        my $sql_path = "$sql_dir/$sql_file";
+        my $sql_content = eval { read_file($sql_path) };
+        if ($@) {
+            warn "Failed to read SQL file $sql_path: $@";
+            return 0;
+        }
+        $dbh->do($sql_content) or do {
+            warn "Failed to execute SQL from $sql_file: " . $dbh->errstr;
+            return 0;
+        };
+    }
 
     return 1;
 }
@@ -97,6 +142,24 @@ sub upgrade {
 ## after ourselves!
 sub uninstall() {
     my ( $self, $args ) = @_;
+
+    my $dbh = C4::Context->dbh;
+    my @tables = qw(
+        record_graph_resources
+        record_graphs
+        record_format_mappings
+        record_component_parts
+        record_agent_summary
+        record_manif_summary
+        record_work_summary
+        record_properties
+        record_links
+        record_resources
+    );
+
+    for my $table (@tables) {
+        $dbh->do("DROP TABLE IF EXISTS $table");
+    }
 
     return 1;
 }
