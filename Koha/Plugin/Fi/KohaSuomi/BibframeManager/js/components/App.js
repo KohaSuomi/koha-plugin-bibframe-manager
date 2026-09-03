@@ -33,7 +33,7 @@ export default {
             <div class="row align-items-start">
                 <div class="col-md-7">
                     <h2><i class="fas fa-project-diagram"></i> Bibframe Record Builder</h2>
-                    <p class="text-muted">Create Finnish BIBFRAME (Bibframe) records from scratch using the four-level RDA structure</p>
+                    <p class="text-muted">Create Bibframe records from scratch using BFFI (four-level RDA) or LOC BIBFRAME 2.0 (Work > Instance > Item)</p>
                 </div>
                 <div class="col-md-5">
                     <SearchRecords />
@@ -68,15 +68,22 @@ export default {
                         <div class="card-body">
                             <h5 class="card-title"><i class="fas fa-cog"></i> Configuration</h5>
                             <div class="row">
-                                <div class="col-md-4">
+                                <div class="col-md-3">
+                                    <label class="form-label">Standard</label>
+                                    <select v-model="store.standard" class="form-select">
+                                        <option value="bffi">BFFI — Work &gt; Expression &gt; Manifestation &gt; Item</option>
+                                        <option value="loc">LOC — Work &gt; Instance &gt; Item</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
                                     <label class="form-label">Record ID</label>
                                     <input v-model="store.recordId" type="text" class="form-control" placeholder="Enter Record ID">
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label class="form-label">Base URI</label>
                                     <input v-model="store.baseUri" type="text" class="form-control">
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label class="form-label">Output Format</label>
                                     <select v-model="store.outputFormat" class="form-select">
                                         <option value="turtle">Turtle (.ttl)</option>
@@ -94,7 +101,7 @@ export default {
                         <div class="entity-type-btn" @click="store.addEntity('work')">
                             <i class="fas fa-book fa-2x text-primary"></i>
                             <h5>Work</h5>
-                            <small>Abstract creation — Expressions are added from the Work</small>
+                            <small>{{ store.standard === 'loc' ? 'Abstract creation — Instances are added from the Work' : 'Abstract creation — Expressions are added from the Work' }}</small>
                         </div>
                     </div>
 

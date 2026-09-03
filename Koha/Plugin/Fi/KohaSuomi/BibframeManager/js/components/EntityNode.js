@@ -1,6 +1,8 @@
 // Recursive Entity Node Component
 // Renders a single entity card and any nested child entities beneath it,
-// forming the fixed 4-level ladder: Work > Expression > Manifestation > Item.
+// forming the fixed ladder for the selected standard:
+// BFFI: Work > Expression > Manifestation > Item
+// LOC:  Work > Instance > Item
 import { useBibframeStore } from '../store/index.js';
 import { useEntityHelpers } from '../composables/utils.js';
 
@@ -23,8 +25,11 @@ export default {
         const store = useBibframeStore();
         const { getEntityIcon, getEntityBadgeClass, getEntityDescription } = useEntityHelpers();
 
+        const collapsed = Vue.ref(false);
+
         return {
             store,
+            collapsed,
             getEntityIcon,
             getEntityBadgeClass,
             getEntityDescription
@@ -41,21 +46,15 @@ export default {
             return this.entity.type.charAt(0).toUpperCase() + this.entity.type.slice(1);
         },
         childLabel() {
-            const labels = {
-                work: 'Expressions',
-                expression: 'Manifestations',
-                manifestation: 'Items',
-                item: null
-            };
+            const labels = this.store.standard === 'loc'
+                ? { work: 'Instances', instance: 'Items', item: null }
+                : { work: 'Expressions', expression: 'Manifestations', manifestation: 'Items', item: null };
             return labels[this.entity.type];
         },
         childType() {
-            const types = {
-                work: 'expression',
-                expression: 'manifestation',
-                manifestation: 'item',
-                item: null
-            };
+            const types = this.store.standard === 'loc'
+                ? { work: 'instance', instance: 'item', item: null }
+                : { work: 'expression', expression: 'manifestation', manifestation: 'item', item: null };
             return types[this.entity.type];
         },
         canAddChild() {
@@ -67,19 +66,28 @@ export default {
             if (this.childType) {
                 this.store.addEntity(this.childType);
             }
+        },
+        toggleCollapsed() {
+            this.collapsed = !this.collapsed;
         }
     },
     template: `
         <div class="entity-node" :class="'entity-child-level' + level">
-            <div class="entity-card" :class="entity.type">
+            <div class="entity-card" :class="[entity.type, { 'is-collapsed': collapsed }]">
                 <div class="entity-header">
                     <div>
                         <h4>
+                            <button @click="toggleCollapsed" class="btn btn-sm btn-link p-0 me-1 collapse-toggle" :title="collapsed ? 'Expand' : 'Collapse'">
+                                <i :class="collapsed ? 'fas fa-chevron-right' : 'fas fa-chevron-down'"></i>
+                            </button>
                             <i :class="getEntityIcon(entity.type)"></i>
                             {{ typeLabel }}
                             <span class="badge" :class="'bg-' + getEntityBadgeClass(entity.type) + ' badge-entity'">
                                 {{ entity.type }}
                             </span>
+                            <small class="text-muted ms-2">
+                                {{ entity.properties.length }} props / {{ entity.relationships.length }} rels
+                            </small>
                         </h4>
                         <small class="text-muted">{{ getEntityDescription(entity.type) }}</small>
                     </div>
@@ -88,100 +96,102 @@ export default {
                     </button>
                 </div>
 
-                <!-- URI Input -->
-                <div class="mb-3">
-                    <label class="form-label">Entity URI (optional)</label>
-                    <input
-                        v-model="entity.uri"
-                        type="text"
-                        class="form-control"
-                        placeholder="Leave empty to auto-generate based on Record ID"
-                    >
-                </div>
-
-                <!-- Properties Section -->
-                <div class="mb-3">
-                    <h5><i class="fas fa-tags"></i> Properties</h5>
-                    <div v-for="(prop, propIndex) in entity.properties" :key="propIndex" class="d-flex gap-2 align-items-center mb-2">
-                        <select v-model="prop.predicate" class="form-select">
-                            <option value="">Select Property...</option>
-                            <option v-for="suggestion in store.getPropertyOnly(entity.type)"
-                                    :key="suggestion.value"
-                                    :value="suggestion.value">
-                                {{ suggestion.label }}
-                            </option>
-                            <option value="custom">Custom Property...</option>
-                        </select>
-
+                <div v-show="!collapsed">
+                    <!-- URI Input -->
+                    <div class="mb-3">
+                        <label class="form-label">Entity URI (optional)</label>
                         <input
-                            v-if="prop.predicate === 'custom'"
-                            v-model="prop.customPredicate"
+                            v-model="entity.uri"
                             type="text"
                             class="form-control"
-                            style="width: 250px;"
-                            placeholder="Custom predicate URI"
+                            placeholder="Leave empty to auto-generate based on Record ID"
                         >
+                    </div>
 
-                        <input
-                            v-model="prop.object"
-                            type="text"
-                            class="form-control flex-grow-1"
-                            placeholder="Value"
-                        >
+                    <!-- Properties Section -->
+                    <div class="mb-3">
+                        <h5><i class="fas fa-tags"></i> Properties</h5>
+                        <div v-for="(prop, propIndex) in entity.properties" :key="propIndex" class="d-flex gap-2 align-items-center mb-2">
+                            <select v-model="prop.predicate" class="form-select">
+                                <option value="">Select Property...</option>
+                                <option v-for="suggestion in store.getPropertyOnly(entity.type)"
+                                        :key="suggestion.value"
+                                        :value="suggestion.value">
+                                    {{ suggestion.label }}
+                                </option>
+                                <option value="custom">Custom Property...</option>
+                            </select>
 
-                        <select v-model="prop.objectType" class="form-select" style="width: 120px;">
-                            <option value="literal">Literal</option>
-                            <option value="uri">URI</option>
-                        </select>
+                            <input
+                                v-if="prop.predicate === 'custom'"
+                                v-model="prop.customPredicate"
+                                type="text"
+                                class="form-control"
+                                style="width: 250px;"
+                                placeholder="Custom predicate URI"
+                            >
 
-                        <button @click="store.removeProperty(entityIndex, propIndex)" class="btn btn-sm btn-danger">
-                            <i class="fas fa-times"></i>
+                            <input
+                                v-model="prop.object"
+                                type="text"
+                                class="form-control flex-grow-1"
+                                placeholder="Value"
+                            >
+
+                            <select v-model="prop.objectType" class="form-select" style="width: 120px;">
+                                <option value="literal">Literal</option>
+                                <option value="uri">URI</option>
+                            </select>
+
+                            <button @click="store.removeProperty(entityIndex, propIndex)" class="btn btn-sm btn-danger">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+
+                        <button @click="store.addProperty(entityIndex)" class="btn btn-sm btn-outline-primary mt-2">
+                            <i class="fas fa-plus"></i> Add Property
                         </button>
                     </div>
 
-                    <button @click="store.addProperty(entityIndex)" class="btn btn-sm btn-outline-primary mt-2">
-                        <i class="fas fa-plus"></i> Add Property
-                    </button>
-                </div>
+                    <!-- Relationships Section -->
+                    <div>
+                        <h5><i class="fas fa-link"></i> Relationships</h5>
+                        <div v-for="(rel, relIndex) in entity.relationships" :key="relIndex" class="d-flex gap-2 align-items-center mb-2">
+                            <select v-model="rel.predicate" class="form-select" style="width: 200px;">
+                                <option value="">Select Relationship...</option>
+                                <option v-for="suggestion in store.getRelationshipSuggestions(entity.type)"
+                                        :key="suggestion.value"
+                                        :value="suggestion.value">
+                                    {{ suggestion.label }}
+                                </option>
+                                <option value="custom">Custom...</option>
+                            </select>
 
-                <!-- Relationships Section -->
-                <div>
-                    <h5><i class="fas fa-link"></i> Relationships</h5>
-                    <div v-for="(rel, relIndex) in entity.relationships" :key="relIndex" class="d-flex gap-2 align-items-center mb-2">
-                        <select v-model="rel.predicate" class="form-select" style="width: 200px;">
-                            <option value="">Select Relationship...</option>
-                            <option v-for="suggestion in store.getRelationshipSuggestions(entity.type)"
-                                    :key="suggestion.value"
-                                    :value="suggestion.value">
-                                {{ suggestion.label }}
-                            </option>
-                            <option value="custom">Custom...</option>
-                        </select>
+                            <input
+                                v-if="rel.predicate === 'custom'"
+                                v-model="rel.customPredicate"
+                                type="text"
+                                class="form-control"
+                                style="width: 250px;"
+                                placeholder="Custom relationship URI"
+                            >
 
-                        <input
-                            v-if="rel.predicate === 'custom'"
-                            v-model="rel.customPredicate"
-                            type="text"
-                            class="form-control"
-                            style="width: 250px;"
-                            placeholder="Custom relationship URI"
-                        >
+                            <input
+                                v-model="rel.targetUri"
+                                type="text"
+                                class="form-control flex-grow-1"
+                                placeholder="Target URI"
+                            >
 
-                        <input
-                            v-model="rel.targetUri"
-                            type="text"
-                            class="form-control flex-grow-1"
-                            placeholder="Target URI"
-                        >
+                            <button @click="store.removeRelationship(entityIndex, relIndex)" class="btn btn-sm btn-danger">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
 
-                        <button @click="store.removeRelationship(entityIndex, relIndex)" class="btn btn-sm btn-danger">
-                            <i class="fas fa-times"></i>
+                        <button @click="store.addRelationship(entityIndex)" class="btn btn-sm btn-outline-primary mt-2">
+                            <i class="fas fa-plus"></i> Add Relationship
                         </button>
                     </div>
-
-                    <button @click="store.addRelationship(entityIndex)" class="btn btn-sm btn-outline-primary mt-2">
-                        <i class="fas fa-plus"></i> Add Relationship
-                    </button>
                 </div>
             </div>
 

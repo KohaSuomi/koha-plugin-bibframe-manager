@@ -202,13 +202,16 @@ sub convert {
                 $formatted_output = $rdfxml;
             }
 
+            # Parse RDF/XML into triples so the editor can be populated
+            my $triples = $converter->rdf_to_triples($rdfxml);
+
             # Save to database if requested
             my $metadata_id = 0;
             if ($save_to_db && $biblionumber) {
                 my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
                 $metadata_id = $db->saveBibframeMetadata(
                     $biblionumber,
-                    [],
+                    $triples,
                     format => $loc_format,
                     schema => 'BIBFRAME'
                 );
@@ -217,9 +220,11 @@ sub convert {
             return $c->render(
                 status => 200,
                 openapi => {
+                    triples => $triples,
                     formatted => $formatted_output,
                     format => $loc_format,
                     standard => 'loc',
+                    triple_count => scalar(@$triples),
                     biblionumber => $biblionumber,
                     metadata_id => $metadata_id,
                     message => 'MARC21 record successfully converted to BIBFRAME via LoC XSLT'

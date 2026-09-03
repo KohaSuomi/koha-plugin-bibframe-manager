@@ -724,6 +724,156 @@ sub rdf_to_json {
     return JSON->new->utf8->pretty->encode($result);
 }
 
+sub rdf_to_triples {
+    my ($self, $rdfxml) = @_;
+
+    return [] unless $rdfxml;
+
+    # Decode raw bytes to Perl characters if needed
+    if (!utf8::is_utf8($rdfxml)) {
+        eval { $rdfxml = Encode::decode('UTF-8', $rdfxml, Encode::FB_CROAK) };
+        if ($@) {
+            eval { $rdfxml = Encode::decode('Latin-1', $rdfxml) };
+        }
+    }
+
+    my $parser = XML::LibXML->new();
+    my $doc = eval { $parser->parse_string($rdfxml) };
+    return [] if $@ || !$doc;
+
+    my $root = $doc->documentElement();
+
+    # Namespace prefix map for readable predicates
+    my %registered_ns;
+    for my $ns ($root->getNamespaces()) {
+        my ($prefix, $uri) = ($ns->getLocalName(), $ns->getValue());
+        $registered_ns{$prefix} = $uri if $prefix;
+    }
+    my @default_ns = (
+        ['bf',      'http://id.loc.gov/ontologies/bibframe/'],
+        ['bflc',    'http://id.loc.gov/ontologies/bflc/'],
+        ['rdf',     'http://www.w3.org/1999/02/22-rdf-syntax-ns#'],
+        ['rdfs',    'http://www.w3.org/2000/01/rdf-schema#'],
+        ['dcterms', 'http://purl.org/dc/terms/'],
+    );
+    for my $pair (@default_ns) {
+        my ($pfx, $uri) = @$pair;
+        $registered_ns{$pfx} = $uri unless exists $registered_ns{$pfx};
+    }
+    my %ns_map = reverse %registered_ns;  # uri -> prefix
+
+    my @triples;
+
+    # Process property element under a subject, emitting triples
+    my $prop;
+    # Process a subject element's children as properties
+    my $subject_walk;
+    $subject_walk = sub {
+        my ($node, $subject) = @_;
+        for my $child ($node->findnodes('*')) {
+            next unless $child->nodeType() == 1;  # XML_ELEMENT_NODE
+            $prop->($child, $subject);
+        }
+    };
+    $prop = sub {
+        my ($el, $subject) = @_;
+
+        my $localname = $el->localname() || $el->nodeName();
+        my $ns_uri    = $el->namespaceURI() || '';
+        my $pred_full = $ns_uri ? "$ns_uri$localname" : $localname;
+        my $predicate = $ns_map{$ns_uri}
+                      ? "$ns_map{$ns_uri}:$localname"
+                      : $pred_full;
+
+        my $resource = $el->getAttributeNS('http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'resource');
+        my $about    = $el->getAttributeNS('http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'about');
+        my @children = grep { $_->nodeType() == 1 } $el->childNodes();
+
+        # rdf:type -> additional/sub type triple
+        if ($localname eq 'type'
+            && $ns_uri eq 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
+            && $resource) {
+            push @triples, { subject => $subject, predicate => 'rdf:type', object => $resource, object_type => 'uri' };
+            return;
+        }
+
+        # URI object
+        if ($resource) {
+            push @triples, { subject => $subject, predicate => $predicate, object => $resource, object_type => 'uri' };
+            return;
+        }
+
+        # Named resource element: this element's name is the class
+        if ($about) {
+            push @triples, { subject => $subject, predicate => $predicate, object => $about, object_type => 'uri' };
+            push @triples, { subject => $about, predicate => 'rdf:type', object => $pred_full, object_type => 'uri' };
+            $subject_walk->($el, $about);
+            return;
+        }
+
+        # Node wrapper: <bf:title><bf:Title>...</bf:Title></bf:title>
+        if (@children) {
+            if (@children == 1) {
+                my $node_el = $children[0];
+                my $node_about    = $node_el->getAttributeNS('http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'about');
+                my $node_resource = $node_el->getAttributeNS('http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'resource');
+
+                if ($node_resource) {
+                    push @triples, { subject => $subject, predicate => $predicate, object => $node_resource, object_type => 'uri' };
+                    return;
+                }
+                if ($node_about) {
+                    # Named nested resource: <bf:language><bf:Language rdf:about=...>
+                    push @triples, { subject => $subject, predicate => $predicate, object => $node_about, object_type => 'uri' };
+                    my $nns = $node_el->namespaceURI() || '';
+                    my $nname = $node_el->localname() || $node_el->nodeName();
+                    push @triples, { subject => $node_about, predicate => 'rdf:type', object => "$nns$nname", object_type => 'uri' };
+                    $subject_walk->($node_el, $node_about);
+                    return;
+                }
+                # Anonymous typed node: flatten its children onto the subject
+                $subject_walk->($node_el, $subject);
+                return;
+            }
+            # Multiple element children: flatten each as a property of the subject
+            for my $c (@children) {
+                $prop->($c, $subject);
+            }
+            return;
+        }
+
+        # Literal
+        my $text = _get_text_content($el);
+        $text =~ s/^\s+|\s+$//g;
+        if (length $text) {
+            my $obj = { subject => $subject, predicate => $predicate, object => $text, object_type => 'literal' };
+            if (my $lang = $el->getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang')) {
+                $obj->{lang} = $lang;
+            }
+            if (my $datatype = $el->getAttributeNS('http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'datatype')) {
+                $obj->{datatype} = $datatype;
+            }
+            push @triples, $obj;
+        }
+    };
+
+    # Top-level resources (e.g. bf:Work with rdf:about)
+    for my $el ($root->findnodes('*')) {
+        next unless $el->nodeType() == 1;  # XML_ELEMENT_NODE
+        my $localname = $el->localname() || $el->nodeName();
+        next if $localname eq 'RDF';
+
+        my $about = $el->getAttributeNS('http://www.w3.org/1999/02/22-rdf-syntax-ns#', 'about');
+        next unless $about;
+
+        my $ns_uri  = $el->namespaceURI() || '';
+        push @triples, { subject => $about, predicate => 'rdf:type', object => "$ns_uri$localname", object_type => 'uri' };
+        $subject_walk->($el, $about);
+    }
+
+    return \@triples;
+}
+
 sub _extract_rdf_property {
     my ($self, $child_node, $resource, $ns_map, $all_resources) = @_;
 

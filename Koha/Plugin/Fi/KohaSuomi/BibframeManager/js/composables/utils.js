@@ -4,6 +4,7 @@ export function useEntityHelpers() {
         const icons = {
             work: 'fas fa-book',
             expression: 'fas fa-file-alt',
+            instance: 'fas fa-copy',
             manifestation: 'fas fa-box',
             item: 'fas fa-barcode'
         };
@@ -14,6 +15,7 @@ export function useEntityHelpers() {
         const classes = {
             work: 'primary',
             expression: 'success',
+            instance: 'info',
             manifestation: 'warning',
             item: 'danger'
         };
@@ -24,6 +26,7 @@ export function useEntityHelpers() {
         const descriptions = {
             work: 'Abstract intellectual or artistic creation',
             expression: 'Specific realization of a work',
+            instance: 'Individual embodiment of a work',
             manifestation: 'Physical embodiment of an expression',
             item: 'Single example of a manifestation'
         };

@@ -63,6 +63,20 @@
         .entity-card:hover {
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
+        .collapse-toggle {
+            color: #6c757d;
+            vertical-align: middle;
+        }
+        .collapse-toggle:hover {
+            color: #005580;
+        }
+        .entity-card.is-collapsed {
+            padding: 12px 20px;
+            margin-bottom: 10px;
+        }
+        .entity-card.is-collapsed .entity-header {
+            margin-bottom: 0;
+        }
         .entity-card.work {
             border-left: 5px solid #007bff;
         }

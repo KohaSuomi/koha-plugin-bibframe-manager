@@ -267,6 +267,182 @@ export const propertySuggestions = {
     ]
 };
 
+// Property suggestions for LOC BIBFRAME 2.0 entities
+// Based on loc_bibframe_mapping.yaml and LOC BIBFRAME 2.0 ontology (bf:, bflc:)
+export const locPropertySuggestions = {
+    work: [
+        // Core relationships
+        { label: 'hasInstance', value: 'bf:hasInstance', type: 'relationship' },
+        { label: 'hasPart', value: 'bf:hasPart', type: 'relationship' },
+        { label: 'partOf', value: 'bf:partOf', type: 'relationship' },
+        { label: 'relatedTo', value: 'bf:relatedTo', type: 'relationship' },
+        { label: 'accompaniedBy', value: 'bf:accompaniedBy', type: 'relationship' },
+        { label: 'supplementedBy', value: 'bf:supplementedBy', type: 'relationship' },
+        { label: 'derivativeOf', value: 'bf:derivativeOf', type: 'relationship' },
+        { label: 'precededBy', value: 'bf:precededBy', type: 'relationship' },
+        { label: 'succeededBy', value: 'bf:succeededBy', type: 'relationship' },
+        
+        // Title and identification
+        { label: 'title', value: 'bf:title', type: 'relationship' },
+        { label: 'variantTitle', value: 'bf:variantTitle', type: 'relationship' },
+        { label: 'authorizedAccessPoint', value: 'bflc:aap', type: 'property' },
+        { label: 'authorizedAccessPointNormalized', value: 'bflc:aap-normalized', type: 'property' },
+        
+        // Language and content
+        { label: 'language', value: 'bf:language', type: 'relationship' },
+        { label: 'content', value: 'bf:content', type: 'relationship' },
+        { label: 'illustrativeContent', value: 'bf:illustrativeContent', type: 'relationship' },
+        { label: 'supplementaryContent', value: 'bf:supplementaryContent', type: 'relationship' },
+        
+        // Classification and subjects
+        { label: 'classification', value: 'bf:classification', type: 'relationship' },
+        { label: 'classificationPortion', value: 'bf:classificationPortion', type: 'property' },
+        { label: 'itemPortion', value: 'bf:itemPortion', type: 'property' },
+        { label: 'subject', value: 'bf:subject', type: 'relationship' },
+        { label: 'genreForm', value: 'bf:genreForm', type: 'relationship' },
+        
+        // Contribution
+        { label: 'contribution', value: 'bf:contribution', type: 'relationship' },
+        { label: 'contributionAgent', value: 'bf:agent', type: 'relationship' },
+        { label: 'contributionRole', value: 'bf:role', type: 'relationship' },
+        
+        // Content description
+        { label: 'summary', value: 'bf:summary', type: 'relationship' },
+        { label: 'tableOfContents', value: 'bf:tableOfContents', type: 'relationship' },
+        { label: 'note', value: 'bf:note', type: 'property' },
+        
+        // Other characteristics
+        { label: 'cartographicAttributes', value: 'bf:cartographicAttributes', type: 'relationship' },
+        { label: 'musicKey', value: 'bf:musicKey', type: 'relationship' },
+        { label: 'musicMediumOfPerformance', value: 'bf:musicMediumOfPerformance', type: 'relationship' },
+        { label: 'temporalCoverage', value: 'bf:temporalCoverage', type: 'property' },
+        
+        // Part of collection
+        { label: 'isPartOf', value: 'dcterms:isPartOf', type: 'relationship' },
+    ],
+    
+    instance: [
+        // Core relationships
+        { label: 'instanceOf', value: 'bf:instanceOf', type: 'relationship' },
+        { label: 'hasItem', value: 'bf:hasItem', type: 'relationship' },
+        { label: 'hasPart', value: 'bf:hasPart', type: 'relationship' },
+        { label: 'partOf', value: 'bf:partOf', type: 'relationship' },
+        { label: 'reproductionOf', value: 'bf:reproductionOf', type: 'relationship' },
+        
+        // Title
+        { label: 'title', value: 'bf:title', type: 'relationship' },
+        { label: 'variantTitle', value: 'bf:variantTitle', type: 'relationship' },
+        { label: 'keyTitle', value: 'bf:keyTitle', type: 'relationship' },
+        { label: 'abbreviatedTitle', value: 'bf:abbreviatedTitle', type: 'relationship' },
+        
+        // Identifiers
+        { label: 'identifiedBy', value: 'bf:identifiedBy', type: 'relationship' },
+        { label: 'isbn', value: 'bf:isbn', type: 'property' },
+        { label: 'issn', value: 'bf:issn', type: 'property' },
+        { label: 'lccn', value: 'bf:lccn', type: 'property' },
+        { label: 'urn', value: 'bf:urn', type: 'property' },
+        { label: 'doi', value: 'bf:doi', type: 'property' },
+        
+        // Publication and provision
+        { label: 'publicationStatement', value: 'bf:publicationStatement', type: 'property' },
+        { label: 'provisionActivity', value: 'bf:provisionActivity', type: 'relationship' },
+        { label: 'editionStatement', value: 'bf:editionStatement', type: 'property' },
+        { label: 'edition', value: 'bf:edition', type: 'property' },
+        { label: 'issuance', value: 'bf:issuance', type: 'relationship' },
+        { label: 'frequency', value: 'bf:frequency', type: 'relationship' },
+        
+        // Physical description
+        { label: 'extent', value: 'bf:extent', type: 'relationship' },
+        { label: 'dimensions', value: 'bf:dimensions', type: 'property' },
+        
+        // Media and carrier
+        { label: 'media', value: 'bf:media', type: 'relationship' },
+        { label: 'carrier', value: 'bf:carrier', type: 'relationship' },
+        { label: 'mediaAndCarrierType', value: 'bf:mediaAndCarrierType', type: 'relationship' },
+        
+        // Material characteristics
+        { label: 'baseMaterial', value: 'bf:baseMaterial', type: 'relationship' },
+        { label: 'appliedMaterial', value: 'bf:appliedMaterial', type: 'relationship' },
+        { label: 'productionMethod', value: 'bf:productionMethod', type: 'relationship' },
+        { label: 'generation', value: 'bf:generation', type: 'relationship' },
+        { label: 'layout', value: 'bf:layout', type: 'relationship' },
+        { label: 'bookFormat', value: 'bf:bookFormat', type: 'relationship' },
+        { label: 'fontSize', value: 'bf:fontSize', type: 'relationship' },
+        { label: 'soundCharacteristic', value: 'bf:soundCharacteristic', type: 'relationship' },
+        { label: 'videoCharacteristic', value: 'bf:videoCharacteristic', type: 'relationship' },
+        { label: 'digitalCharacteristic', value: 'bf:digitalCharacteristic', type: 'relationship' },
+        
+        // Electronic location
+        { label: 'electronicLocator', value: 'bf:electronicLocator', type: 'relationship' },
+        
+        // Series
+        { label: 'seriesStatement', value: 'bf:seriesStatement', type: 'relationship' },
+        
+        // Notes
+        { label: 'note', value: 'bf:note', type: 'property' },
+    ],
+    
+    item: [
+        // Core relationships
+        { label: 'itemOf', value: 'bf:itemOf', type: 'relationship' },
+        { label: 'partOf', value: 'bf:partOf', type: 'relationship' },
+        { label: 'hasPart', value: 'bf:hasPart', type: 'relationship' },
+        
+        // Holdings
+        { label: 'heldBy', value: 'bf:heldBy', type: 'relationship' },
+        { label: 'shelfMark', value: 'bf:shelfMark', type: 'relationship' },
+        { label: 'shelfMarkLabel', value: 'bflc:shelfMark', type: 'property' },
+        { label: 'shelfMarkNumber', value: 'bflc:shelfMarkNumber', type: 'property' },
+        { label: 'subLocation', value: 'bf:subLocation', type: 'relationship' },
+        { label: 'enumerationAndChronology', value: 'bf:enumerationAndChronology', type: 'property' },
+        
+        // Item information
+        { label: 'barcode', value: 'bf:barcode', type: 'property' },
+        { label: 'copyNumber', value: 'bf:copyNumber', type: 'property' },
+        { label: 'itemNumber', value: 'bflc:itemNumber', type: 'property' },
+        { label: 'pieceDesignation', value: 'bflc:pieceDesignation', type: 'property' },
+        { label: 'itemStatus', value: 'bf:itemStatus', type: 'relationship' },
+        { label: 'circulationStatus', value: 'bf:circulationStatus', type: 'relationship' },
+        
+        // Location
+        { label: 'location', value: 'bf:location', type: 'relationship' },
+        { label: 'temporaryLocation', value: 'bf:temporaryLocation', type: 'relationship' },
+        
+        // Access
+        { label: 'usageAndAccessPolicy', value: 'bf:usageAndAccessPolicy', type: 'relationship' },
+        { label: 'electronicLocator', value: 'bf:electronicLocator', type: 'relationship' },
+        
+        // Notes
+        { label: 'note', value: 'bf:note', type: 'property' },
+        { label: 'itemSpecificNote', value: 'bf:itemSpecificNote', type: 'property' },
+    ]
+};
+
+// Relationship predicates for LOC BIBFRAME 2.0
+export const locRelationships = {
+    // Work <-> Instance
+    hasInstance: 'bf:hasInstance',
+    instanceOf: 'bf:instanceOf',
+    
+    // Instance <-> Item
+    hasItem: 'bf:hasItem',
+    itemOf: 'bf:itemOf',
+    
+    // Work <-> Work / Instance <-> Instance
+    partOf: 'bf:partOf',
+    hasPart: 'bf:hasPart',
+    relatedTo: 'bf:relatedTo',
+    derivativeOf: 'bf:derivativeOf',
+    precededBy: 'bf:precededBy',
+    succeededBy: 'bf:succeededBy',
+    supplementedBy: 'bf:supplementedBy',
+    accompaniedBy: 'bf:accompaniedBy',
+    reproductionOf: 'bf:reproductionOf',
+    
+    // Agent relationships
+    contribution: 'bf:contribution'
+};
+
 // Relationship predicates from YAML
 export const relationships = {
     // Work <-> Expression

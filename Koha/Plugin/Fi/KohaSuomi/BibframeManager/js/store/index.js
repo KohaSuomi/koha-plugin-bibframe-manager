@@ -1,7 +1,7 @@
 // Pinia Store for Bibframe Manager
 const { defineStore } = Pinia;
 import { usePluginApi } from '../composables/api.js';
-import { propertySuggestions, relationships } from '../config/property-suggestions.js';
+import { propertySuggestions, relationships, locPropertySuggestions, locRelationships } from '../config/property-suggestions.js';
 
 export const useBibframeStore = defineStore('bibframe', {
     state: () => ({
@@ -9,6 +9,9 @@ export const useBibframeStore = defineStore('bibframe', {
         recordId: '',
         outputFormat: 'turtle',
         saveToDatabase: false,
+        // Standard selection: 'bffi' (Work > Expression > Manifestation > Item)
+        // or 'loc' (LOC BIBFRAME 2.0: Work > Instance > Item)
+        standard: 'bffi',
         entities: [],
         error: null,
         success: null,
@@ -17,25 +20,39 @@ export const useBibframeStore = defineStore('bibframe', {
         
         // Property suggestions for each entity type (from bibframe_mapping.yaml)
         propertySuggestions: propertySuggestions,
+        locPropertySuggestions: locPropertySuggestions,
         
         // All available relationships
-        relationships: relationships
+        relationships: relationships,
+        locRelationships: locRelationships
     }),
     
     getters: {
+        // Entity-level ladder for the currently selected standard
+        entityLadder: (state) => {
+            return state.standard === 'loc'
+                ? ['work', 'instance', 'item']
+                : ['work', 'expression', 'manifestation', 'item'];
+        },
+        
         getPropertySuggestions: (state) => (entityType) => {
-            return state.propertySuggestions[entityType] || [];
+            const source = state.standard === 'loc' ? state.locPropertySuggestions : state.propertySuggestions;
+            return source[entityType] || [];
         },
         
         // Get only property suggestions (non-relationships)
         getPropertyOnly: (state) => (entityType) => {
-            const suggestions = state.propertySuggestions[entityType] || [];
+            const suggestions = state.standard === 'loc'
+                ? (state.locPropertySuggestions[entityType] || [])
+                : (state.propertySuggestions[entityType] || []);
             return suggestions.filter(s => s.type === 'property');
         },
         
         // Get only relationship suggestions
         getRelationshipSuggestions: (state) => (entityType) => {
-            const suggestions = state.propertySuggestions[entityType] || [];
+            const suggestions = state.standard === 'loc'
+                ? (state.locPropertySuggestions[entityType] || [])
+                : (state.propertySuggestions[entityType] || []);
             return suggestions.filter(s => s.type === 'relationship');
         },
         
@@ -45,14 +62,20 @@ export const useBibframeStore = defineStore('bibframe', {
 
         hasWork: (state) => state.entities.some(ent => ent.type === 'work'),
 
-        // Build a fixed 4-level ladder: Work > Expression > Manifestation > Item
+        // Build a fixed ladder based on the selected standard:
+        // BFFI: Work > Expression > Manifestation > Item
+        // LOC:  Work > Instance > Item
         // Entities are partitioned by type; each Work is a root carrying its
-        // Expressions, which carry their Manifestations, which carry their Items.
+        // children, which carry their children, etc. down the ladder.
         // Children are spread evenly across the parents of the level directly
         // above (linear interpolation), so nothing is dropped and the nesting
         // stays balanced rather than clustering under the first parent.
         getEntityHierarchy: (state) => {
-            const byType = { work: [], expression: [], manifestation: [], item: [] };
+            const ladder = state.standard === 'loc'
+                ? ['work', 'instance', 'item']
+                : ['work', 'expression', 'manifestation', 'item'];
+            const byType = {};
+            ladder.forEach(t => { byType[t] = []; });
             state.entities.forEach((entity, index) => {
                 const type = entity.type;
                 if (byType[type]) {
@@ -78,40 +101,40 @@ export const useBibframeStore = defineStore('bibframe', {
 
             const withChildren = (node, children) => ({ ...node, nodeIndex: 0, children });
 
-            // If no Works exist, fall back to top-level Expressions.
-            if (byType.work.length === 0) {
-                return byType.expression.map((e) => withChildren(e, []));
+            // Build nodes for one ladder level. Children of the level below are
+            // distributed evenly across all parents of this type (by global rank),
+            // matching the original Work > Expression > Manifestation > Item
+            // distribution so behaviour stays identical per standard.
+            const buildLevel = (levelIdx) => {
+                const type = ladder[levelIdx];
+                const childType = ladder[levelIdx + 1];
+                const nodes = byType[type] || [];
+                if (!childType) {
+                    return nodes.map((n) => withChildren(n, []));
+                }
+                const buckets = distribute(byType[childType], nodes.length);
+                const childNodes = buildLevel(levelIdx + 1);
+                return nodes.map((parent, i) => {
+                    const children = buckets[i].map((child) => {
+                        const globalIdx = byType[childType].findIndex(x => x.index === child.index);
+                        return childNodes[globalIdx];
+                    });
+                    const node = { ...parent, children };
+                    node.nodeIndex = i;
+                    return node;
+                });
+            };
+
+            // If no root entities exist, fall back to the next ladder level
+            // (e.g. no Works, but Expressions/Instances exist) as flat nodes.
+            if (byType[ladder[0]].length === 0 && ladder[1]) {
+                return byType[ladder[1]].map((e) => withChildren(e, []));
+            }
+            if (byType[ladder[0]].length === 0) {
+                return [];
             }
 
-            const works = byType.work.map((work, i) => {
-                const linkedExpressions = byType.expression.length
-                    ? distribute(byType.expression, byType.work.length)[i]
-                    : [];
-                const expressionChildren = linkedExpressions.map((e) => {
-                    const eGlobal = byType.expression.findIndex(x => x.index === e.index);
-                    const linkedManifestations = byType.manifestation.length
-                        ? distribute(byType.manifestation, byType.expression.length)[eGlobal]
-                        : [];
-                    const manifestationChildren = linkedManifestations.map((m) => {
-                        const mGlobal = byType.manifestation.findIndex(x => x.index === m.index);
-                        const linkedItems = byType.item.length
-                            ? distribute(byType.item, byType.manifestation.length)[mGlobal]
-                            : [];
-                        const itemNodes = linkedItems.map((it) => withChildren(it, []));
-                        const manNode = { ...m, children: itemNodes };
-                        manNode.nodeIndex = linkedManifestations.findIndex(x => x.index === m.index);
-                        return manNode;
-                    });
-                    const expNode = { ...e, children: manifestationChildren };
-                    expNode.nodeIndex = linkedExpressions.findIndex(x => x.index === e.index);
-                    return expNode;
-                });
-                const workNode = { ...work, children: expressionChildren };
-                workNode.nodeIndex = i;
-                return workNode;
-            });
-
-            return works;
+            return buildLevel(0);
         }
     },
     
@@ -172,7 +195,7 @@ export const useBibframeStore = defineStore('bibframe', {
         async convertRecord(biblionumber) {
             try {
                 const { convertRecordToBibframe } = usePluginApi();
-                const converted = await convertRecordToBibframe(biblionumber, this.outputFormat);
+                const converted = await convertRecordToBibframe(biblionumber, this.outputFormat, this.standard);
                 
                 // Populate entities from the triplets
                 if (converted.triples && converted.triples.length > 0) {
@@ -200,19 +223,34 @@ export const useBibframeStore = defineStore('bibframe', {
                 groupedBySubject[triple.subject].push(triple);
             });
             
+            // rdf:type predicate as full URI, prefix form, or local tail
+            const isTypePredicate = (predicate) =>
+                predicate === 'rdf:type' ||
+                predicate === 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type' ||
+                predicate.endsWith('#type');
+            
+            // Extract entity type from the rdf:type object.
+            // Accepts prefixed (bffi:Work, bf:Work) and full URI forms
+            // (http://id.loc.gov/ontologies/bibframe/Work).
+            const extractEntityType = (typeObject) => {
+                const m = typeObject.match(/(?:bffi|bf):(\w+)$|\/(\w+)$/);
+                if (!m) return null;
+                const name = m[1] || m[2];
+                const type = String(name).toLowerCase();
+                return ['work', 'expression', 'manifestation', 'instance', 'item'].includes(type) ? type : null;
+            };
+            
             // Create entities from grouped triples
             Object.keys(groupedBySubject).forEach(subjectUri => {
                 const subjectTriples = groupedBySubject[subjectUri];
                 
                 // Find the rdf:type triple to determine entity type
-                const typeTriple = subjectTriples.find(t => t.predicate === 'rdf:type');
+                const typeTriple = subjectTriples.find(t => isTypePredicate(t.predicate));
                 if (!typeTriple) return; // Skip if no type found
                 
-                // Extract entity type from bffi:Work, bffi:Expression, etc.
-                const typeMatch = typeTriple.object.match(/bffi:(\w+)/);
-                if (!typeMatch) return;
-                
-                const entityType = typeMatch[1].toLowerCase();
+                // Extract entity type from bffi:Work, bf:Work, or full URI
+                const entityType = extractEntityType(typeTriple.object);
+                if (!entityType) return;
                 
                 // Create new entity
                 const entity = {
@@ -225,7 +263,7 @@ export const useBibframeStore = defineStore('bibframe', {
                 // Process all triples for this subject
                 subjectTriples.forEach(triple => {
                     // Skip rdf:type as it's already used to determine entity type
-                    if (triple.predicate === 'rdf:type') return;
+                    if (isTypePredicate(triple.predicate)) return;
                     
                     // Check if it's a relationship (URI) or property (literal)
                     if (triple.object_type === 'uri') {
@@ -283,15 +321,20 @@ export const useBibframeStore = defineStore('bibframe', {
             
             // Generate triples from entities
             const triples = [];
-            
+            const isLoc = this.standard === 'loc';
+
             this.entities.forEach(entity => {
                 const subjectUri = entity.uri || `${this.baseUri}${this.recordId}/${entity.type}`;
                 
-                // Add rdf:type triple
+                // Add rdf:type triple (prefix form for BFFI, full URI for LOC)
+                const typeName = entity.type.charAt(0).toUpperCase() + entity.type.slice(1);
+                const typeObject = isLoc
+                    ? `http://id.loc.gov/ontologies/bibframe/${typeName}`
+                    : `bffi:${typeName}`;
                 triples.push({
                     subject: subjectUri,
                     predicate: 'rdf:type',
-                    object: `bffi:${entity.type.charAt(0).toUpperCase() + entity.type.slice(1)}`,
+                    object: typeObject,
                     objectType: 'uri'
                 });
                 
@@ -341,8 +384,10 @@ export const useBibframeStore = defineStore('bibframe', {
         formatAsTurtle(triples) {
             let output = '@prefix bffi: <http://urn.fi/URN:NBN:fi:schema:bffi:> .\n';
             output += '@prefix bf: <http://id.loc.gov/ontologies/bibframe/> .\n';
+            output += '@prefix bflc: <http://id.loc.gov/ontologies/bflc/> .\n';
             output += '@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n';
-            output += '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n\n';
+            output += '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n';
+            output += '@prefix dcterms: <http://purl.org/dc/terms/> .\n\n';
             
             const groupedTriples = {};
             triples.forEach(t => {
@@ -370,7 +415,10 @@ export const useBibframeStore = defineStore('bibframe', {
                 "@context": {
                     "bffi": "http://urn.fi/URN:NBN:fi:schema:bffi:",
                     "bf": "http://id.loc.gov/ontologies/bibframe/",
-                    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+                    "bflc": "http://id.loc.gov/ontologies/bflc/",
+                    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+                    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+                    "dcterms": "http://purl.org/dc/terms/"
                 }
             };
             
