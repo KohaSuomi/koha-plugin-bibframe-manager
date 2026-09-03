@@ -88,6 +88,7 @@ sub install() {
         '02_summary_tables.sql',
         '03_component_parts.sql',
         '04_format_mappings_graphs.sql',
+        '05_add_item_id.sql',
     );
 
     my $dbh = C4::Context->dbh;
@@ -118,6 +119,7 @@ sub upgrade {
         '02_summary_tables.sql',
         '03_component_parts.sql',
         '04_format_mappings_graphs.sql',
+        '05_add_item_id.sql',
     );
 
     my $dbh = C4::Context->dbh;

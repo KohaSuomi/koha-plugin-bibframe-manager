@@ -3,6 +3,7 @@
 -- These tables store BIBFRAME/WEMI entities in a format-agnostic way.
 
 -- record_resources: Core entity table for all BIBFRAME resources
+-- Items link to Koha's items table via item_id (minimal storage, authoritative data in items)
 CREATE TABLE IF NOT EXISTS record_resources (
     id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     uri             VARCHAR(512) NOT NULL,
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS record_resources (
         'Title','Place','Language','Series','AdminMetadata'
     ) NOT NULL,
     biblio_id       BIGINT UNSIGNED,
+    item_id         BIGINT UNSIGNED,      -- nullable: links to Koha items.itemnumber for Item resources
 
     label           VARCHAR(1024),
     label_normalized VARCHAR(1024),
@@ -26,6 +28,7 @@ CREATE TABLE IF NOT EXISTS record_resources (
     UNIQUE KEY (uri),
     KEY (resource_type),
     KEY (biblio_id),
+    KEY (item_id),
     KEY (label_normalized(191)),
     KEY (source_format)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
