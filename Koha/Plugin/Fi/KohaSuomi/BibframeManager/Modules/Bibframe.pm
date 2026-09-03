@@ -1038,4 +1038,48 @@ sub _find_xslt_path {
     return "$module_dir/../config/marc2bibframe2.xsl";
 }
 
+sub _detect_original_language {
+    my ($self, $marc_record) = @_;
+
+    # Priority 1: MARC 041 $h (explicit original language)
+    if (my $field_041 = $marc_record->field('041')) {
+        if (my $subfield_h = $field_041->subfield('h')) {
+            return {
+                original_language => $subfield_h,
+                is_translation    => 1,
+                source            => '041$h',
+            };
+        }
+    }
+
+    # Priority 2: MARC 008 positions 35-37 (main language)
+    if (my $field_008 = $marc_record->field('008')) {
+        my $data = $field_008->data();
+        if (length($data) >= 38) {
+            my $lang_008 = substr($data, 35, 3);
+            $lang_008 =~ s/\s+$//;
+
+            my $is_translation = 0;
+            if (my $field_041 = $marc_record->field('041')) {
+                my @subfields_a = $field_041->subfield('a');
+                if (@subfields_a && $subfields_a[0] ne $lang_008) {
+                    $is_translation = 1;
+                }
+            }
+
+            return {
+                original_language => $lang_008,
+                is_translation    => $is_translation,
+                source            => '008',
+            };
+        }
+    }
+
+    return {
+        original_language => undef,
+        is_translation    => 0,
+        source            => 'none',
+    };
+}
+
 1;
