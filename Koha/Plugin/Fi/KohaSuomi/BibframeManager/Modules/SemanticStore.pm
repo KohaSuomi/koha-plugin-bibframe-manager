@@ -9,6 +9,7 @@ use Digest::MD5 qw(md5_hex);
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryRebuilder;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::ComponentPartsSync;
 use C4::Context;
 
 =head1 NAME
@@ -913,6 +914,7 @@ sub _rebuild_summaries {
     my ($self, $resource_uris) = @_;
 
     my $rebuilder = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryRebuilder->new();
+    my $parts_sync = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::ComponentPartsSync->new();
 
     for my $uri (keys %$resource_uris) {
         my $type = $resource_uris->{$uri};
@@ -926,6 +928,10 @@ sub _rebuild_summaries {
         } elsif (grep { $_ eq $type } qw(Person Organization Meeting Family)) {
             $rebuilder->rebuild_agent_summary($res->{id});
         }
+
+        # Keep the materialized component-parts table in sync for any resource
+        # that may participate in a partOf/hasPart containment link.
+        $parts_sync->sync_for_resource($res->{id});
     }
 }
 
