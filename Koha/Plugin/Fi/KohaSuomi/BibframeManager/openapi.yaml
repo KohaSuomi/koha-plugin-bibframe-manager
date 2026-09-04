@@ -65,7 +65,7 @@
               enum:
                 - bffi
                 - loc
-              default: bffi
+              default: loc
             save_to_db:
               type: boolean
               description: Save to database (biblio_metadata table)
@@ -135,3 +135,132 @@
             error:
               type: string
               description: Error message
+/bibframe/store:
+  post:
+    x-mojo-to: "Fi::KohaSuomi::BibframeManager::Controllers::BibframeController#store_export"
+    operationId: exportFromStore
+    x-koha-authorization:
+      permissions:
+        plugins: tool
+    tags:
+      - bibframe
+    summary: Export BIBFRAME from the semantic store
+    description: Reads a stored record from the semantic store and exports it as LoC 3-level or BFFI 4-level WEMI RDF
+    consumes:
+      - application/json
+    produces:
+      - application/json
+      - text/turtle
+      - application/ld+json
+      - application/n-triples
+      - application/rdf+xml
+      - text/plain
+    parameters:
+      - name: body
+        in: body
+        description: Export request parameters
+        required: true
+        schema:
+          type: object
+          required:
+            - method
+          properties:
+            method:
+              type: string
+              description: "Lookup method: resource_id or biblio_id"
+              enum:
+                - resource_id
+                - biblio_id
+            resource_id:
+              type: integer
+              description: record_resources.id to export (required if method=resource_id)
+            biblio_id:
+              type: integer
+              description: Koha biblionumber whose graph to export (required if method=biblio_id)
+            base_uri:
+              type: string
+              description: Base URI for RDF resources
+              default: "http://urn.fi/URN:NBN:fi:bib:"
+            format:
+              type: string
+              description: Output format
+              enum:
+                - turtle
+                - json-ld
+                - ntriples
+                - rdf-xml
+                - json
+              default: json
+            standard:
+              type: string
+              description: "Export standard: loc (LoC 3-level, default) or bffi (BFFI 4-level WEMI)"
+              enum:
+                - bffi
+                - loc
+              default: loc
+    responses:
+      200:
+        description: Successful export
+        schema:
+          type: object
+          properties:
+            triples:
+              type: array
+              description: Array of RDF triples
+              items:
+                type: object
+                properties:
+                  subject:
+                    type: string
+                  predicate:
+                    type: string
+                  object:
+                    type: string
+                  object_type:
+                    type: string
+            formatted:
+              type: string
+              description: Formatted output in requested format
+            format:
+              type: string
+              description: Output format used
+            standard:
+              type: string
+              description: Output standard used (loc or bffi)
+            triple_count:
+              type: integer
+              description: Number of triples generated
+            resource_id:
+              type: integer
+              description: Resource ID exported
+            biblio_id:
+              type: integer
+              description: Biblionumber exported
+            message:
+              type: string
+              description: Success message
+      400:
+        description: Bad request - invalid input
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error message
+      404:
+        description: Record not found
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error message
+      500:
+        description: Internal server error
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error message
+

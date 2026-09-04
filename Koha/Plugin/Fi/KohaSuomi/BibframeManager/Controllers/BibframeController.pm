@@ -4,6 +4,8 @@ use Modern::Perl;
 use Mojo::Base 'Mojolicious::Controller';
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BibframeGenerator;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIGenerator;
 use Koha::Biblios;
 use MARC::Record;
 use MARC::File::USMARC;
@@ -298,6 +300,90 @@ sub convert {
 
     } catch {
         warn "Bibframe conversion error: $_";
+        return $c->render(
+            status => 500,
+            openapi => { error => "Internal server error: $_" }
+        );
+    };
+}
+
+=head2 store_export
+
+POST /api/v1/contrib/kohasuomi/bibframe/store
+
+Reads a stored record from the semantic store and exports it as LoC 3-level
+(default) or BFFI 4-level WEMI RDF, depending on the requested standard.
+
+=cut
+
+sub store_export {
+    my $c = shift->openapi->valid_input or return;
+
+    return try {
+        my $body = $c->req->json;
+        my $method = $body->{method} || 'biblio_id';
+        my $base_uri = $body->{base_uri} || 'http://urn.fi/URN:NBN:fi:bib:';
+        my $format = $body->{format} || 'json';
+        my $standard = $body->{standard} || 'loc';
+
+        my %lookup;
+        if ($method eq 'resource_id') {
+            $lookup{resource_id} = $body->{resource_id};
+            unless ($lookup{resource_id}) {
+                return $c->render(
+                    status => 400,
+                    openapi => { error => 'resource_id is required for method=resource_id' }
+                );
+            }
+        } else {
+            $lookup{biblio_id} = $body->{biblio_id};
+            unless ($lookup{biblio_id}) {
+                return $c->render(
+                    status => 400,
+                    openapi => { error => 'biblio_id is required for method=biblio_id' }
+                );
+            }
+        }
+
+        my $triples;
+        my $formatted_output;
+        my $message;
+
+        if ($standard eq 'loc') {
+            my $gen = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BibframeGenerator->new();
+            $triples = $gen->generate_triples(%lookup);
+            $formatted_output = $gen->generate(%lookup, format => $format);
+            $message = 'Record exported as LoC 3-level BIBFRAME from the semantic store';
+        } else {
+            my $gen = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIGenerator->new();
+            $triples = $gen->generate_triples(%lookup, base_uri => $base_uri);
+            $formatted_output = $gen->generate(%lookup, format => $format, base_uri => $base_uri);
+            $message = 'Record exported as BFFI 4-level WEMI (derived from LoC 3-level store)';
+        }
+
+        unless ($triples && @$triples) {
+            return $c->render(
+                status => 404,
+                openapi => { error => 'No stored semantic data found for the requested record' }
+            );
+        }
+
+        return $c->render(
+            status => 200,
+            openapi => {
+                triples => $triples,
+                formatted => $formatted_output,
+                format => $format,
+                standard => $standard,
+                triple_count => scalar(@$triples),
+                resource_id => $lookup{resource_id},
+                biblio_id => $lookup{biblio_id},
+                message => $message
+            }
+        );
+
+    } catch {
+        warn "Bibframe store export error: $_";
         return $c->render(
             status => 500,
             openapi => { error => "Internal server error: $_" }

@@ -10,6 +10,7 @@ use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryRebuilder;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::ComponentPartsSync;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::MarcGenerator;
 use C4::Context;
 
 =head1 NAME
@@ -37,6 +38,23 @@ sub new {
 
 sub dbh {
     return C4::Context->dbh;
+}
+
+=head2 get_record
+
+    my $record = $store->get_record(resource_id => $id);
+    my $record = $store->get_record(biblio_id => $biblio_id);
+
+Delegates to MarcGenerator to reconstruct the authoritative MARC21 record for
+a resource (or biblio). Returns a MARC::Record object or undef.
+
+=cut
+
+sub get_record {
+    my ($self, %args) = @_;
+
+    my $gen = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::MarcGenerator->new();
+    return $gen->get_record(%args);
 }
 
 =head1 PUBLIC METHODS
@@ -149,6 +167,9 @@ sub store_marc_record {
         $work_uri          => 'Work',
         $instance_uri      => 'Instance',
     });
+
+    # Save the authoritative MARC copy so MarcGenerator can reconstruct it
+    $self->_save_format_mapping($marc_record, $instance_uri);
 
     return $result;
 }
@@ -933,6 +954,49 @@ sub _rebuild_summaries {
         # that may participate in a partOf/hasPart containment link.
         $parts_sync->sync_for_resource($res->{id});
     }
+}
+
+# Persists the authoritative MARC21 copy to record_format_mappings so that
+# MarcGenerator can reconstruct it. The MARC copy is per-biblio; it is keyed
+# to the resource id of the given resource URI (the Instance for a biblio).
+sub _save_format_mapping {
+    my ($self, $marc_record, $resource_uri) = @_;
+
+    return unless $marc_record && $resource_uri;
+
+    my $res = $self->_find_existing_resource($resource_uri);
+    return unless $res;
+
+    my $dbh = $self->dbh;
+    my $xml = $marc_record->as_xml();
+
+    $dbh->do(
+        "INSERT INTO record_format_mappings (resource_id, format_name, serialized_data, marc_tags_json)
+         VALUES (?, 'marc21', ?, ?)
+         ON DUPLICATE KEY UPDATE serialized_data = VALUES(serialized_data),
+                                 marc_tags_json = VALUES(marc_tags_json),
+                                 version = version + 1,
+                                 updated_at = CURRENT_TIMESTAMP",
+        undef, $res->{id}, $xml, $self->_extract_marc_tags_json($marc_record)
+    );
+}
+
+# Collects the MARC tags used in the record as JSON, for introspection/rebuild.
+sub _extract_marc_tags_json {
+    my ($self, $marc_record) = @_;
+
+    my %tags;
+    for my $field ($marc_record->fields()) {
+        next unless $field->is_control_field();
+        $tags{$field->tag()} = 1;
+    }
+    for my $field ($marc_record->fields()) {
+        next unless $field->is_data_field();
+        $tags{$field->tag()} = 1;
+    }
+
+    my @sorted = sort keys %tags;
+    return encode_json(\@sorted);
 }
 
 sub _execute_storage {

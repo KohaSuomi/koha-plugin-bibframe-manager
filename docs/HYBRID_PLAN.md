@@ -880,11 +880,13 @@ BIBFRAME RDF ───→ RDF Parser ───┘    (dedup, extract,       reco
 
 1. **Common queries:** Read from summary tables (fast). Example: `SELECT * FROM record_work_summary WHERE language = 'fin'`.
 
-2. **Full graph:** Read from core tables. Example: traverse `record_links` to build the complete Work → Expression → Manifestation → Item chain.
+2. **Full graph:** Read from core tables. Example: traverse `record_links` to build the complete Work → Instance → Item chain (LoC canonical stored model).
 
-3. **Export to MARC21:** Read summary tables + `record_component_parts` + `record_format_mappings`. Reconstruct MARC21 tags/subfields.
+3. **Export to MARC21:** `Modules/MarcGenerator.pm` returns the authoritative saved MARC copy from `record_format_mappings` (`format_name='marc21'`), falling back to Koha `biblio_metadata` (Phase 10).
 
-4. **Export to BIBFRAME:** Read core tables. Build RDF triples from `record_resources` + `record_properties` + `record_links`.
+4. **Export to BIBFRAME (LoC 3-level):** `Modules/BibframeGenerator.pm` reads core tables and builds LoC 3-level RDF triples from `record_resources` + `record_properties` + `record_links` (Phase 11a).
+
+5. **Export to BFFI (4-level WEMI):** `Modules/BFFIGenerator.pm` feeds the BibframeGenerator LoC 3-level triples through `Bibframe::derive_wemi_from_loc` to derive the Work → Expression → Manifestation → Item graph on export. The Expression level is derived on demand and never persisted (Phase 11b).
 
 ---
 
@@ -982,8 +984,9 @@ LIMIT 20;
 | 7 | Semantic normalizer | `Modules/SemanticStore.pm` — converts MARC21/BIBFRAME to semantic primitives |
 | 8 | Summary rebuilder | `Modules/SummaryRebuilder.pm` — rebuilds summary tables from core tables |
 | 9 | Component parts sync | Populate `record_component_parts` from `record_links` with `relationship_type = 'partOf'` |
-| 10 | MARC21 generator | `Modules/MarcGenerator.pm` — semantic store → MARC21 XML |
-| 11 | BIBFRAME generator | `Modules/BibframeGenerator.pm` — semantic store → RDF triples |
+| 10 | MARC21 generator | `Modules/MarcGenerator.pm` — semantic store → MARC21. Returns the authoritative saved MARC copy from `record_format_mappings.format_name='marc21'`, falling back to Koha `biblio_metadata`. `SemanticStore::get_record` + `_save_format_mapping` persist/read the copy. |
+| 11a | LoC BIBFRAME generator | `Modules/BibframeGenerator.pm` — reads core tables (`record_resources`/`record_properties`/`record_links`) and emits LoC 3-level (Work → Instance → Item) RDF triples. Default export standard. |
+| 11b | BFFI 4-level WEMI generator | `Modules/BFFIGenerator.pm` — derives the 4-level WEMI (Work → Expression → Manifestation → Item) from the stored LoC 3-level graph via `Bibframe::derive_wemi_from_loc` on BFFI export only. Expression is never persisted. |
 | 12 | Elasticsearch sync | `Modules/SearchIndex.pm` — MariaDB → ES sync |
 | 13 | API updates | `BibframeController.pm` — query summary tables instead of `biblio_metadata` |
 | 14 | Match candidate DDL | Create `work_match_candidates` table |
