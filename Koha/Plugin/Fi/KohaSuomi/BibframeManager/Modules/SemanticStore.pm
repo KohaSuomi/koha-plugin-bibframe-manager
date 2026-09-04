@@ -11,6 +11,7 @@ use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryRebuilder;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::ComponentPartsSync;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::MarcGenerator;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SearchIndex;
 use C4::Context;
 
 =head1 NAME
@@ -170,6 +171,9 @@ sub store_marc_record {
 
     # Save the authoritative MARC copy so MarcGenerator can reconstruct it
     $self->_save_format_mapping($marc_record, $instance_uri);
+
+    # Sync the stored biblio to the search index if ES sync is enabled
+    $self->_sync_search_index($biblio_id) if $biblio_id;
 
     return $result;
 }
@@ -954,6 +958,23 @@ sub _rebuild_summaries {
         # that may participate in a partOf/hasPart containment link.
         $parts_sync->sync_for_resource($res->{id});
     }
+}
+
+# Syncs a biblio's document to the Elasticsearch search index when enabled.
+# ES failures are swallowed so the storage transaction is not affected.
+sub _sync_search_index {
+    my ($self, $biblio_id) = @_;
+
+    return unless $biblio_id;
+
+    my $search = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SearchIndex->new();
+    return unless $search->sync_enabled();
+
+    try {
+        $search->index_document($biblio_id);
+    } catch {
+        warn "Search index sync for biblio $biblio_id failed: $_";
+    };
 }
 
 # Persists the authoritative MARC21 copy to record_format_mappings so that

@@ -795,6 +795,36 @@ CREATE TABLE record_graph_resources (
 ## Elasticsearch Integration
 
 ES documents are built from **summary tables** (fast) and **core tables** (full detail).
+ES is a derived search index, never the source of truth.
+
+Configuration is **plugin-specific** (decoupled from Koha's own Elasticsearch),
+read from the `bibframe_manager` koha-conf.xml stanza, the `BIBFRAME_ES_*`
+environment variables, or constructor arguments (`es_server`, `es_index`,
+`es_username`, `es_password`, `es_enabled`). Sync is gated by `es_enabled`
+(default **off**) so the external ES dependency never breaks ordinary storage.
+Exposed via `Modules/SearchIndex.pm` and `cronjobs/sync_search_index.pl`.
+
+### Document model selection
+
+The `config/es_mapping.yaml` `model:` key selects the document model:
+
+- **`loc-3`** (default) — one flattened document per biblio built from the
+  LoC 3-level store (work + agents/subjects/instance/parts).
+- **`wemi-4`** — same flattening, plus a derived `expressions` array under
+  `work`. The Expression level is computed **at index time** by feeding the
+  stored LoC triples (`BibframeGenerator->generate_triples`) into
+  `Bibframe::derive_wemi_from_loc`; it is never persisted. LoC 3-level stays
+  canonical.
+- **`loc-raw`** — one document per stored LoC entity (Work, Instance, Agent,
+  Topic, ...), `_id` = resource URI, preserving the original BIBFRAME entity
+  structure. Built via `build_documents`.
+
+Index names are namespaced per model (`<index_prefix>_<model>`, e.g.
+`bibframe_entities_loc-3`, `bibframe_entities_wemi-4`, `bibframe_entities_loc-raw`)
+so distinct models can coexist. An explicitly configured `es_index` is used
+verbatim (no suffix). Override the model at runtime with the `--model` cronjob
+option or the `BIBFRAME_ES_MODEL` env var, and at build time via the
+`es_model` constructor argument.
 
 ### Index: record_entities
 
@@ -987,7 +1017,7 @@ LIMIT 20;
 | 10 | MARC21 generator | `Modules/MarcGenerator.pm` — semantic store → MARC21. Returns the authoritative saved MARC copy from `record_format_mappings.format_name='marc21'`, falling back to Koha `biblio_metadata`. `SemanticStore::get_record` + `_save_format_mapping` persist/read the copy. |
 | 11a | LoC BIBFRAME generator | `Modules/BibframeGenerator.pm` — reads core tables (`record_resources`/`record_properties`/`record_links`) and emits LoC 3-level (Work → Instance → Item) RDF triples. Default export standard. |
 | 11b | BFFI 4-level WEMI generator | `Modules/BFFIGenerator.pm` — derives the 4-level WEMI (Work → Expression → Manifestation → Item) from the stored LoC 3-level graph via `Bibframe::derive_wemi_from_loc` on BFFI export only. Expression is never persisted. |
-| 12 | Elasticsearch sync | `Modules/SearchIndex.pm` — MariaDB → ES sync |
+| 12 | Elasticsearch sync | `Modules/SearchIndex.pm` — builds `record_entities` documents from summary + core tables (work/agents/manifestation/component_parts/suggest) and syncs to ES. The BIBFRAME→document field mapping is declarative: `config/es_mapping.yaml` (loaded by `Modules/Esmapping.pm`) maps semantic storage shapes onto doc fields, so SearchIndex is data-driven rather than hardcoded. Plugin-specific config (decoupled from Koha's ES), read from the `bibframe_manager` koha-conf.xml stanza / `BIBFRAME_ES_*` env / constructor args. Sync is off by default (`es_enabled`), so the external ES dependency never breaks ordinary storage. **Configurable document models** via the `es_mapping.yaml` `model:` selector: `loc-3` (default, one flattened doc per biblio), `wemi-4` (adds a derived `expressions` array under `work`, computed at index time via `Bibframe::derive_wemi_from_loc` from the stored LoC triples — Expression is never persisted, LoC 3-level stays canonical), and `loc-raw` (one doc per stored LoC entity, `_id` = resource URI; via `build_documents`). Index names are namespaced per model (`<index_prefix>_<model>`): `bibframe_entities_loc-3` / `_wemi-4` / `_loc-raw`, and an explicitly configured `es_index` is used verbatim. API: `ensure_index`, `build_document`, `build_documents`, `index_document`, `index_biblios`, `delete_document`, `rebuild_all`, `sync_biblio`; integrated into `SemanticStore._sync_search_index`; cronjob `cronjobs/sync_search_index.pl` (`--all/--biblionumber/--file/--range/--index/--delete/--model`). |
 | 13 | API updates | `BibframeController.pm` — query summary tables instead of `biblio_metadata` |
 | 14 | Match candidate DDL | Create `work_match_candidates` table |
 | 15 | Clustering engine | `Modules/WorkClusterer.pm` — deterministic rules 1–12 (incl. adaptation, work_type, date, creator-authority gates) auto-merge or route to review |

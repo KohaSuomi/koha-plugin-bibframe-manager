@@ -1,0 +1,134 @@
+# Elasticsearch Document Mapping Configuration
+#
+# Declares how semantic (BIBFRAME) data maps onto the searchable
+# Elasticsearch document. The hybrid storage layer's summary tables
+# (record_work_summary, record_instance_summary) and core tables
+# (record_resources, record_properties, record_links,
+# record_component_parts) feed the ES document. This file maps those
+# storage shapes onto the document fields, decoupling the SearchIndex
+# module from hardcoded column names.
+#
+# Sources referenced in this file:
+#   work.*          -> record_work_summary columns
+#   manifestation.* -> record_instance_summary columns
+#   agents.*        -> record_links (creator/contributor) + record_resources
+#   subjects.*      -> record_links (subject) + record_resources
+#   component_parts.* -> record_component_parts columns
+#
+# The semantic model is the LoC 3-level (Work -> Instance -> Item); the
+# Expression level is derived on demand (export or indexing), never stored.
+#
+# =====================================================================
+# MODEL SELECTION
+# =====================================================================
+# The `model` key selects which document model to build. It also namespaces
+# the index (via index_prefix + model) so different models can coexist.
+#
+#   loc-3   - (default) One flattened document per biblio built from the
+#             LoC 3-level store (Work + Instance/Agent/Subject/parts).
+#   wemi-4  - One flattened document per biblio, plus a derived `expressions`
+#             array under work. The Expression level is derived at index time
+#             from the stored LoC triples (via Bibframe::derive_wemi_from_loc).
+#   loc-raw - Index each stored LoC entity as its own document (resource URI
+#             as _id), preserving the original BIBFRAME entity structure.
+# =====================================================================
+
+version: "1.0"
+document_type: record_entities
+model: loc-3                  # loc-3 | wemi-4 | loc-raw
+index_prefix: bibframe_entities
+
+# ---------------------------------------------------------------------
+# Work section - populated from record_work_summary + the Work resource.
+# key: EAV property_key / resource label that populates the field.
+# ---------------------------------------------------------------------
+work:
+  uri:            "uri"            # record_resources.uri of the Work
+  label:          "label"          # record_resources.label of the Work
+  title:          "title"          # record_work_summary.title
+  type:           "work_type"      # record_work_summary.work_type
+  languages:      "language"       # record_work_summary.language
+  # subjects are defined below under subjects:
+
+# ---------------------------------------------------------------------
+# Manifestation section - populated from record_instance_summary.
+# key: record_instance_summary column providing the value.
+# ---------------------------------------------------------------------
+manifestation:
+  uri:            "resource_id"    # record_resources.uri of the Instance
+  publisher:      "publisher_name"
+  place:          "publication_place"
+  date:           "publication_date"
+  date_sort:      "publication_date_sort"
+  media_type:     "media_type"
+  carrier_type:   "carrier_type"
+  extent:         "extent"
+  # identifiers are collected from record_properties (see identifiers:)
+  identifiers:
+    property_key_match: "~identifier"   # substring match on property_key/uri
+    type_field:         "property_key"
+    value_field:        "value_text"
+
+# ---------------------------------------------------------------------
+# WEMI (4-level) section - used only when model: wemi-4.
+# Declares the fields captured from the derived Expression node(s).
+# Each field maps a BIBFRAME/bffi property localname to a doc key.
+# ---------------------------------------------------------------------
+wemi:
+  expression:
+    enabled: true
+    # Predicates (property localnames) captured from the derived Expression
+    # node(s). localname -> document key (default is the localname itself).
+    # derive_wemi_from_loc moves the realization-specific properties
+    # (language, edition, note, content type) from the Work onto the new
+    # Expression node; title stays on the Work.
+    field_map:
+      note:             "note"
+      language:         "language"
+      editionNote:      "edition"
+      contentType:      "content_type"
+    expression_key: "expressions"   # array key under work
+
+# ---------------------------------------------------------------------
+# Agents section - agents linked to the Work via record_links.
+# relationship_types: record_links.relationship_type values that identify
+#                     agent contributors. The first listed maps to role 'aut'.
+# ---------------------------------------------------------------------
+agents:
+  relationship_types:
+    - creator
+    - contributor
+  fields:
+    name:     "label"      # record_resources.label
+    role:     "role"       # derived from relationship_type (creator -> aut)
+    agent_id: "id"         # record_resources.id
+
+# ---------------------------------------------------------------------
+# Subjects section - subjects linked to the Work via record_links.
+# ---------------------------------------------------------------------
+subjects:
+  relationship_type: "subject"
+  fields:
+    term:   "label"          # record_resources.label
+    type:   "resource_type"  # record_resources.resource_type (Topic, etc.)
+    source: "source"         # record_properties.property_key='source' on subject
+
+# ---------------------------------------------------------------------
+# Component parts section - populated from record_component_parts.
+# key: record_component_parts column providing the value.
+# ---------------------------------------------------------------------
+component_parts:
+  limit: 100
+  fields:
+    host_title: "host_title"
+    host_issn:  "host_issn"
+    volume:     "volume_designation"
+
+# ---------------------------------------------------------------------
+# Suggest (autocomplete) field - built from the fields listed here.
+# ---------------------------------------------------------------------
+suggest:
+  weight: 10
+  input_fields:
+    - "work.label"
+    - "agents.name"
