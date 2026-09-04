@@ -263,4 +263,73 @@
             error:
               type: string
               description: Error message
+/bibframe/summary:
+  get:
+    x-mojo-to: "Fi::KohaSuomi::BibframeManager::Controllers::BibframeController#summary"
+    operationId: getSummary
+    x-koha-authorization:
+      permissions:
+        plugins: tool
+    tags:
+      - bibframe
+    summary: Read stored semantic summary for a biblio
+    description: Reads the stored semantic data for a biblio from the typed summary tables (record_work_summary, record_instance_summary, record_agent_summary) instead of biblio_metadata
+    produces:
+      - application/json
+    parameters:
+      - name: biblio_id
+        in: query
+        description: Koha biblionumber whose stored summary to read
+        required: true
+        type: integer
+    responses:
+      200:
+        description: Successful summary read
+        schema:
+          type: object
+          properties:
+            biblio_id:
+              type: integer
+              description: Biblionumber whose summary was read
+            work:
+              type: object
+              description: Work summary row (record_work_summary) plus resource uri
+            instances:
+              type: array
+              description: Instance summary rows (record_instance_summary) plus uri
+              items:
+                type: object
+            agents:
+              type: array
+              description: Agents (record_agent_summary) linked to the Work via creator/contributor relationships
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  name_normalized:
+                    type: string
+                  agent_type:
+                    type: string
+                  role:
+                    type: string
+      400:
+        description: Bad request - biblio_id required
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error message
+      500:
+        description: Internal server error
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error message
+
 

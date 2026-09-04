@@ -6,6 +6,7 @@ use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BibframeGenerator;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIGenerator;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryReader;
 use Koha::Biblios;
 use MARC::Record;
 use MARC::File::USMARC;
@@ -384,6 +385,51 @@ sub store_export {
 
     } catch {
         warn "Bibframe store export error: $_";
+        return $c->render(
+            status => 500,
+            openapi => { error => "Internal server error: $_" }
+        );
+    };
+}
+
+=head2 summary
+
+GET /api/v1/contrib/kohasuomi/bibframe/summary
+
+Serves the stored semantic data for a biblio from the typed summary tables
+(record_work_summary, record_instance_summary, record_agent_summary) instead
+of biblio_metadata. Returns the Work, its Instances and its Agents.
+
+=cut
+
+sub summary {
+    my $c = shift->openapi->valid_input or return;
+
+    return try {
+        my $biblio_id = $c->param('biblio_id');
+
+        unless (defined $biblio_id && length $biblio_id) {
+            return $c->render(
+                status => 400,
+                openapi => { error => 'biblio_id is required' }
+            );
+        }
+
+        my $reader = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryReader->new();
+        my $data = $reader->get_for_biblio($biblio_id + 0);
+
+        return $c->render(
+            status => 200,
+            openapi => {
+                biblio_id => $biblio_id + 0,
+                work      => $data->{work},
+                instances => $data->{instances},
+                agents    => $data->{agents},
+            }
+        );
+
+    } catch {
+        warn "Bibframe summary read error: $_";
         return $c->render(
             status => 500,
             openapi => { error => "Internal server error: $_" }
