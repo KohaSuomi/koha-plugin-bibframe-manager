@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS record_work_summary (
 
     contributor_count   INT UNSIGNED DEFAULT 0,
     subject_count       INT UNSIGNED DEFAULT 0,
-    manifestation_count INT UNSIGNED DEFAULT 0,
+    instance_count      INT UNSIGNED DEFAULT 0,
 
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -36,8 +36,10 @@ CREATE TABLE IF NOT EXISTS record_work_summary (
     CONSTRAINT fk_ws_orig FOREIGN KEY (original_resource_id) REFERENCES record_resources(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- record_manif_summary: Fast access to Manifestation-level data
-CREATE TABLE IF NOT EXISTS record_manif_summary (
+-- record_instance_summary: Fast access to Instance-level data
+-- The LoC BIBFRAME 3-level model is the canonical stored model (Work -> Instance -> Item),
+-- so the physical-entity summary is keyed on Instance rather than Manifestation.
+CREATE TABLE IF NOT EXISTS record_instance_summary (
     id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     resource_id         BIGINT UNSIGNED NOT NULL,
     work_resource_id    BIGINT UNSIGNED,
@@ -48,7 +50,7 @@ CREATE TABLE IF NOT EXISTS record_manif_summary (
     publication_date    VARCHAR(128),
     publication_date_sort DATE,
 
-    manifestation_type  VARCHAR(128),
+    instance_type       VARCHAR(128),
     media_type          VARCHAR(128),
     carrier_type        VARCHAR(128),
     extent              VARCHAR(512),
@@ -61,7 +63,7 @@ CREATE TABLE IF NOT EXISTS record_manif_summary (
     KEY (biblio_id),
     KEY (publication_date_sort),
     KEY (publisher_name(191)),
-    KEY (manifestation_type),
+    KEY (instance_type),
     KEY (carrier_type),
     CONSTRAINT fk_ms_resource FOREIGN KEY (resource_id) REFERENCES record_resources(id) ON DELETE CASCADE,
     CONSTRAINT fk_ms_work FOREIGN KEY (work_resource_id) REFERENCES record_resources(id) ON DELETE SET NULL

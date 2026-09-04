@@ -12,7 +12,7 @@ Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryRebuilder
 
 =head1 DESCRIPTION
 
-Rebuilds the summary tables (record_work_summary, record_manif_summary,
+Rebuilds the summary tables (record_work_summary, record_instance_summary,
 record_agent_summary) from the canonical core storage layer
 (record_resources, record_properties, record_links).
 
@@ -50,7 +50,7 @@ sub rebuild_all {
 
     my $result = {
         work_summary => 0,
-        manifest_summary => 0,
+        instance_summary => 0,
         agent_summary => 0,
     };
 
@@ -58,11 +58,11 @@ sub rebuild_all {
         $dbh->begin_work();
 
         $dbh->do('TRUNCATE TABLE record_work_summary');
-        $dbh->do('TRUNCATE TABLE record_manif_summary');
+        $dbh->do('TRUNCATE TABLE record_instance_summary');
         $dbh->do('TRUNCATE TABLE record_agent_summary');
 
         $result->{work_summary} = $self->_rebuild_work_summary();
-        $result->{manifest_summary} = $self->_rebuild_manif_summary();
+        $result->{instance_summary} = $self->_rebuild_instance_summary();
         $result->{agent_summary} = $self->_rebuild_agent_summary();
 
         $dbh->commit();
@@ -97,25 +97,25 @@ sub rebuild_work_summary {
     $self->_rebuild_work_summary($resource_id);
 }
 
-=head2 rebuild_manif_summary
+=head2 rebuild_instance_summary
 
-    $rebuilder->rebuild_manif_summary($resource_id);
+    $rebuilder->rebuild_instance_summary($resource_id);
 
-Rebuilds the manifest_summary row for a single Manifestation resource.
+Rebuilds the instance_summary row for a single Instance resource.
 
 =cut
 
-sub rebuild_manif_summary {
+sub rebuild_instance_summary {
     my ($self, $resource_id) = @_;
 
     my $dbh = $self->dbh;
 
     $dbh->do(
-        'DELETE FROM record_manif_summary WHERE resource_id = ?',
+        'DELETE FROM record_instance_summary WHERE resource_id = ?',
         undef, $resource_id
     );
 
-    $self->_rebuild_manif_summary($resource_id);
+    $self->_rebuild_instance_summary($resource_id);
 }
 
 =head2 rebuild_agent_summary
@@ -168,7 +168,7 @@ sub _rebuild_work_summary {
         "INSERT INTO record_work_summary
              (resource_id, biblio_id, title, title_normalized, language,
               work_type, original_language, original_resource_id, original_pending,
-              contributor_count, subject_count, manifestation_count)
+              contributor_count, subject_count, instance_count)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
 
@@ -181,10 +181,15 @@ sub _rebuild_work_summary {
         my $work_type = $props->{work_type}->[0];
         my $original_language = $props->{originalLanguage}->[0];
 
-        # Work-level language defaults to the original language when present
-        my $language = $original_language || $props->{languageOfExpression}->[0];
+        # Work-level language. In the LoC 3-level stored model the Work carries
+        # the language directly (property key 'language'); in the 4-level model the
+        # language sits on the Expression (languageOfExpression).
+        my $language = $props->{language}->[0]
+            || $original_language
+            || $props->{languageOfExpression}->[0];
 
-        # Determine the local original expression (language == original and not a translation)
+        # Identify the local original Expression (or instance-level original) only
+        # when an original language is recorded and an Expression/Instance node exists.
         my ($original_resource_id, $original_pending);
         if ($original_language) {
             my ($orig_id) = $self->_find_original_expression($rid, $original_language);
@@ -195,7 +200,7 @@ sub _rebuild_work_summary {
         }
 
         # Count linked entities
-        my ($contributor_count, $subject_count, $manifestation_count) =
+        my ($contributor_count, $subject_count, $instance_count) =
             $self->_count_linked($rid);
 
         $insert->execute(
@@ -210,7 +215,7 @@ sub _rebuild_work_summary {
             $original_pending,
             $contributor_count,
             $subject_count,
-            $manifestation_count,
+            $instance_count,
         );
         $count++;
     }
@@ -218,7 +223,7 @@ sub _rebuild_work_summary {
     return $count;
 }
 
-sub _rebuild_manif_summary {
+sub _rebuild_instance_summary {
     my ($self, $only_resource_id) = @_;
 
     my $dbh = $self->dbh;
@@ -230,7 +235,7 @@ sub _rebuild_manif_summary {
     my $sth = $dbh->prepare(
         "SELECT id, biblio_id
          FROM record_resources
-         WHERE resource_type IN ('Manifestation', 'Instance') $where"
+         WHERE resource_type IN ('Instance', 'Manifestation') $where"
     );
 
     if ($only_resource_id) {
@@ -240,16 +245,16 @@ sub _rebuild_manif_summary {
     }
 
     my $insert = $dbh->prepare(
-        "INSERT INTO record_manif_summary
+        "INSERT INTO record_instance_summary
              (resource_id, work_resource_id, biblio_id,
               publisher_name, publication_place, publication_date, publication_date_sort,
-              manifestation_type, media_type, carrier_type, extent)
+              instance_type, media_type, carrier_type, extent)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
 
     my $count = 0;
-    while (my $manif = $sth->fetchrow_hashref()) {
-        my $rid = $manif->{id};
+    while (my $inst = $sth->fetchrow_hashref()) {
+        my $rid = $inst->{id};
 
         my $props = $self->_properties_for($rid);
 
@@ -261,12 +266,12 @@ sub _rebuild_manif_summary {
         $insert->execute(
             $rid,
             $work_resource_id,
-            $manif->{biblio_id},
+            $inst->{biblio_id},
             $props->{publisherName}->[0],
             $props->{publicationPlace}->[0],
             $date,
             $date_sort,
-            $props->{manifestationType}->[0],
+            $props->{instanceType}->[0],
             $props->{mediaType}->[0],
             $props->{carrierType}->[0],
             $props->{extent}->[0],
@@ -345,34 +350,47 @@ sub _properties_for {
     return \%props;
 }
 
-# Walks up links from a Manifestation to find its Work resource id
+# Walks up links from an Instance to find its Work resource id.
+# In the LoC 3-level stored model the link is directly Instance -> Work (instanceOf).
 sub _derive_work_resource {
-    my ($self, $manif_resource_id) = @_;
+    my ($self, $instance_resource_id) = @_;
 
-    # Manifestation -> Expression (expressionManifested)
     my $sth = $self->dbh->prepare(
         "SELECT target_resource_id
          FROM record_links
-         WHERE source_resource_id = ? AND relationship_type = 'expressionManifested'
+         WHERE source_resource_id = ? AND relationship_type = 'instanceOf'
          LIMIT 1"
     );
-    $sth->execute($manif_resource_id);
-    my $expr = $sth->fetchrow_arrayref();
-    return undef unless $expr;
+    $sth->execute($instance_resource_id);
+    my $work = $sth->fetchrow_arrayref();
 
-    # Expression -> Work (expressionOf)
-    my $sth2 = $self->dbh->prepare(
-        "SELECT target_resource_id
-         FROM record_links
-         WHERE source_resource_id = ? AND relationship_type = 'expressionOf'
-         LIMIT 1"
-    );
-    $sth2->execute($expr->[0]);
-    my $work = $sth2->fetchrow_arrayref();
-    return $work ? $work->[0] : undef;
+    unless ($work) {
+        # Fallback: walk up the (legacy) 4-level chain Expression -> Work
+        my $sth_expr = $self->dbh->prepare(
+            "SELECT target_resource_id
+             FROM record_links
+             WHERE source_resource_id = ? AND relationship_type = 'expressionManifested'
+             LIMIT 1"
+        );
+        $sth_expr->execute($instance_resource_id);
+        my $expr = $sth_expr->fetchrow_arrayref();
+        return undef unless $expr;
+
+        my $sth2 = $self->dbh->prepare(
+            "SELECT target_resource_id
+             FROM record_links
+             WHERE source_resource_id = ? AND relationship_type = 'expressionOf'
+             LIMIT 1"
+        );
+        $sth2->execute($expr->[0]);
+        my $work2 = $sth2->fetchrow_arrayref();
+        return $work2 ? $work2->[0] : undef;
+    }
+
+    return $work->[0];
 }
 
-# Returns (contributor_count, subject_count, manifestation_count) for a Work
+# Returns (contributor_count, subject_count, instance_count) for a Work
 sub _count_linked {
     my ($self, $work_resource_id) = @_;
 
@@ -391,9 +409,9 @@ sub _count_linked {
 
     my $contributor = ($counts{creator} || 0) + ($counts{contributor} || 0);
     my $subject = $counts{subject} || 0;
-    my $manifestation = $counts{hasExpression} || 0;
+    my $instance = ($counts{hasInstance} || 0) + ($counts{hasExpression} || 0);
 
-    return ($contributor, $subject, $manifestation);
+    return ($contributor, $subject, $instance);
 }
 
 # Finds the local original Expression for a Work (language == original_language,
@@ -401,18 +419,21 @@ sub _count_linked {
 sub _find_original_expression {
     my ($self, $work_resource_id, $original_language) = @_;
 
+    # LoC 3-level stored model: language sits directly on the linked Instance.
+    # Find an Instance of the Work whose language matches the original and that
+    # is not marked as a translation.
     my $sth = $self->dbh->prepare(
         "SELECT l.target_resource_id AS rid
          FROM record_links l
          JOIN record_properties lg
               ON lg.resource_id = l.target_resource_id
-             AND lg.property_key = 'languageOfExpression'
+             AND lg.property_key IN ('language','languageOfExpression')
              AND lg.value_text = ?
          LEFT JOIN record_properties tr
               ON tr.resource_id = l.target_resource_id
              AND tr.property_key = 'isTranslation'
          WHERE l.source_resource_id = ?
-           AND l.relationship_type = 'hasExpression'
+           AND l.relationship_type IN ('hasInstance','hasExpression')
            AND tr.id IS NULL
          ORDER BY l.id
          LIMIT 1"

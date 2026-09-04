@@ -44,7 +44,9 @@ sub dbh {
 
     my $result = $store->store_marc_record($marc_record, %options);
 
-Stores a MARC21 record as semantic primitives.
+Stores a MARC21 record as semantic primitives using the LoC BIBFRAME 3-level
+model (Work -> Instance -> Item) as the canonical stored form. The 4-level WEMI
+(with Expression) is derived on BFFI export.
 
 Parameters:
     $marc_record - MARC::Record object
@@ -69,16 +71,15 @@ sub store_marc_record {
 
     my $base_uri = $self->{base_uri};
 
-    # Generate URIs for WEMI entities (no Item URI from MARC - items come from Koha's items table)
+    # Generate URIs for LoC 3-level entities (no Item URI from MARC - items come from Koha's items table)
     my $work_uri = "${base_uri}work/${control_number}";
-    my $expression_uri = "${base_uri}expression/${control_number}";
-    my $manifestation_uri = "${base_uri}manifestation/${control_number}";
+    my $instance_uri = "${base_uri}instance/${control_number}";
 
     my @resources_to_insert;
     my %properties_to_insert;
     my @links_to_insert;
 
-    # 1. Create WEMI resources (Work, Expression, Manifestation only)
+    # 1. Create LoC 3-level resources (Work, Instance only)
     push @resources_to_insert, {
         uri => $work_uri,
         resource_type => 'Work',
@@ -88,74 +89,49 @@ sub store_marc_record {
     };
 
     push @resources_to_insert, {
-        uri => $expression_uri,
-        resource_type => 'Expression',
+        uri => $instance_uri,
+        resource_type => 'Instance',
         biblio_id => $biblio_id,
-        label => $self->_extract_expression_label($marc_record),
-        source_format => $source_format,
-    };
-
-    push @resources_to_insert, {
-        uri => $manifestation_uri,
-        resource_type => 'Manifestation',
-        biblio_id => $biblio_id,
-        label => $self->_extract_manifestation_label($marc_record),
+        label => $self->_extract_instance_label($marc_record),
         source_format => $source_format,
     };
 
     # Items are created separately via store_items_from_koha() - they link to Koha's items table
 
-    # 2. Create WEMI links
+    # 2. Create Work -> Instance links (LoC relationships)
     my $bffi_ns = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_namespace('bffi');
 
     push @links_to_insert, {
         source_uri => $work_uri,
-        target_uri => $expression_uri,
-        relationship_type => 'hasExpression',
-        relationship_uri => "${bffi_ns}hasExpression",
+        target_uri => $instance_uri,
+        relationship_type => 'hasInstance',
+        relationship_uri => "${bffi_ns}hasInstance",
     };
 
     push @links_to_insert, {
-        source_uri => $expression_uri,
+        source_uri => $instance_uri,
         target_uri => $work_uri,
-        relationship_type => 'expressionOf',
-        relationship_uri => "${bffi_ns}expressionOf",
+        relationship_type => 'instanceOf',
+        relationship_uri => "${bffi_ns}instanceOf",
     };
 
-    push @links_to_insert, {
-        source_uri => $expression_uri,
-        target_uri => $manifestation_uri,
-        relationship_type => 'manifestationOfExpression',
-        relationship_uri => "${bffi_ns}manifestationOfExpression",
-    };
-
-    push @links_to_insert, {
-        source_uri => $manifestation_uri,
-        target_uri => $expression_uri,
-        relationship_type => 'expressionManifested',
-        relationship_uri => "${bffi_ns}expressionManifested",
-    };
-
-    # 3. Extract and store Work-level properties
+    # 3. Extract and store Work-level properties (incl. language/translation in LoC's Work)
     $self->_extract_work_properties($marc_record, $work_uri, \%properties_to_insert);
 
-    # 4. Extract and store Expression-level properties
-    $self->_extract_expression_properties($marc_record, $expression_uri, \%properties_to_insert);
-
-    # 5. Extract and store Manifestation-level properties
-    $self->_extract_manifestation_properties($marc_record, $manifestation_uri, \%properties_to_insert);
+    # 4. Extract and store Instance-level properties
+    $self->_extract_instance_properties($marc_record, $instance_uri, \%properties_to_insert);
 
     # Note: Item properties come from Koha's items table, not from MARC 8XX fields
 
-    # 6. Extract and store Agents (deduplicated)
+    # 5. Extract and store Agents (deduplicated), linked to the Work
     $self->_extract_agents($marc_record, $work_uri, $base_uri,
         \@resources_to_insert, \%properties_to_insert, \@links_to_insert);
 
-    # 8. Extract and store Subjects (deduplicated)
+    # 6. Extract and store Subjects (deduplicated), linked to the Work
     $self->_extract_subjects($marc_record, $work_uri, $base_uri,
         \@resources_to_insert, \%properties_to_insert, \@links_to_insert);
 
-    # 9. Execute inserts in transaction
+    # 7. Execute inserts in transaction
     my $result = $self->_execute_storage(
         \@resources_to_insert,
         \%properties_to_insert,
@@ -165,14 +141,12 @@ sub store_marc_record {
 
     $result->{control_number} = $control_number;
     $result->{work_uri} = $work_uri;
-    $result->{expression_uri} = $expression_uri;
-    $result->{manifestation_uri} = $manifestation_uri;
+    $result->{instance_uri} = $instance_uri;
 
     # Rebuild summary table rows for the entities just stored
     $self->_rebuild_summaries({
         $work_uri          => 'Work',
-        $expression_uri    => 'Expression',
-        $manifestation_uri => 'Manifestation',
+        $instance_uri      => 'Instance',
     });
 
     return $result;
@@ -206,10 +180,13 @@ sub store_bibframe_rdf {
     my @links_to_insert;
 
     # BIBFRAME type URIs
+    # The LoC 3-level model (Work -> Instance -> Item) is the canonical stored
+    # form, so LoC Instance maps to the stored 'Instance' type. BFFI 4-level
+    # input still maps Manifestation to Manifestation.
     my %type_map = (
         'http://id.loc.gov/ontologies/bibframe/Work'         => 'Work',
         'http://id.loc.gov/ontologies/bibframe/Expression'   => 'Expression',
-        'http://id.loc.gov/ontologies/bibframe/Instance'     => 'Manifestation',
+        'http://id.loc.gov/ontologies/bibframe/Instance'     => 'Instance',
         'http://id.loc.gov/ontologies/bibframe/Item'         => 'Item',
         'http://id.loc.gov/ontologies/bibframe/Agent'        => 'Agent',
         'http://id.loc.gov/ontologies/bibframe/Person'       => 'Person',
@@ -228,6 +205,10 @@ sub store_bibframe_rdf {
         'expressionOf' => 'expressionOf',
         'manifestationOfExpression' => 'manifestationOfExpression',
         'expressionManifested' => 'expressionManifested',
+        'hasInstance' => 'hasInstance',
+        'instanceOf' => 'instanceOf',
+        'hasItem' => 'hasItem',
+        'itemOf' => 'itemOf',
         'contribution' => 'contribution',
         'subject' => 'subject',
         'partOf' => 'partOf',
@@ -337,10 +318,10 @@ sub _extract_expression_label {
     return $label;
 }
 
-sub _extract_manifestation_label {
+sub _extract_instance_label {
     my ($self, $marc_record) = @_;
 
-    # Manifestation label includes publication info
+    # Instance label includes publication info
     my $label = $self->_extract_work_label($marc_record);
     if (my $field_264 = $marc_record->field('264')) {
         my $place = $field_264->subfield('a') || '';
@@ -424,48 +405,45 @@ sub _extract_work_properties {
             }
         }
     }
-}
 
-sub _extract_expression_properties {
-    my ($self, $marc_record, $expression_uri, $properties_ref) = @_;
-
-    my $bffi_ns = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_namespace('bffi');
-
-    # Language (from 041, 008)
+    # Language, original language and translation flag.
+    # In the LoC 3-level stored model these sit on the Work.
     my $lang_result = $self->_detect_language($marc_record);
     if ($lang_result->{language}) {
-        push @{$properties_ref->{$expression_uri}}, {
-            property_uri => "${bffi_ns}languageOfExpression",
-            property_key => 'languageOfExpression',
+        push @{$properties_ref->{$work_uri}}, {
+            property_uri => "${bffi_ns}language",
+            property_key => 'language',
             value_type => 'literal',
             value_text => $lang_result->{language},
         };
     }
-
-    # Original language (from 041 $h)
     if ($lang_result->{original_language}) {
-        push @{$properties_ref->{$expression_uri}}, {
+        push @{$properties_ref->{$work_uri}}, {
             property_uri => "${bffi_ns}originalLanguage",
             property_key => 'originalLanguage',
             value_type => 'literal',
             value_text => $lang_result->{original_language},
         };
     }
-
-    # Translation flag
     if ($lang_result->{is_translation}) {
-        push @{$properties_ref->{$expression_uri}}, {
+        push @{$properties_ref->{$work_uri}}, {
             property_uri => "${bffi_ns}isTranslation",
             property_key => 'isTranslation',
             value_type => 'literal',
             value_text => 'true',
         };
     }
+}
 
-    # Edition (from 250)
+sub _extract_instance_properties {
+    my ($self, $marc_record, $instance_uri, $properties_ref) = @_;
+
+    my $bffi_ns = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_namespace('bffi');
+
+    # Edition (from 250) - Instance level in LoC
     if (my $field = $marc_record->field('250')) {
         if (my $edition = $field->subfield('a')) {
-            push @{$properties_ref->{$expression_uri}}, {
+            push @{$properties_ref->{$instance_uri}}, {
                 property_uri => "${bffi_ns}editionStatement",
                 property_key => 'editionStatement',
                 value_type => 'literal',
@@ -477,7 +455,7 @@ sub _extract_expression_properties {
     # Content type (from 336)
     if (my $field = $marc_record->field('336')) {
         if (my $content = $field->subfield('a')) {
-            push @{$properties_ref->{$expression_uri}}, {
+            push @{$properties_ref->{$instance_uri}}, {
                 property_uri => "${bffi_ns}contentType",
                 property_key => 'contentType',
                 value_type => 'literal',
@@ -491,7 +469,7 @@ sub _extract_expression_properties {
         if (my $field = $marc_record->field($tag)) {
             my $note = join(' ', map { $_->[1] } $field->subfield('a'));
             if ($note) {
-                push @{$properties_ref->{$expression_uri}}, {
+                push @{$properties_ref->{$instance_uri}}, {
                     property_uri => "${bffi_ns}note",
                     property_key => 'note',
                     value_type => 'literal',
@@ -500,12 +478,6 @@ sub _extract_expression_properties {
             }
         }
     }
-}
-
-sub _extract_manifestation_properties {
-    my ($self, $marc_record, $manifestation_uri, $properties_ref) = @_;
-
-    my $bffi_ns = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_namespace('bffi');
 
     # Identifiers (from 020, 022, 024)
     for my $tag (qw(020 022 024)) {
@@ -514,7 +486,7 @@ sub _extract_manifestation_properties {
                          ($tag eq '022') ? 'issn' : 'identifier';
             my $value = $field->subfield('a') || '';
             if ($value) {
-                push @{$properties_ref->{$manifestation_uri}}, {
+                push @{$properties_ref->{$instance_uri}}, {
                     property_uri => "${bffi_ns}identifier",
                     property_key => 'identifier',
                     value_type => 'literal',
@@ -532,7 +504,7 @@ sub _extract_manifestation_properties {
             my $date = $field->subfield('c') || '';
 
             if ($place) {
-                push @{$properties_ref->{$manifestation_uri}}, {
+                push @{$properties_ref->{$instance_uri}}, {
                     property_uri => "${bffi_ns}publicationPlace",
                     property_key => 'publicationPlace',
                     value_type => 'literal',
@@ -540,7 +512,7 @@ sub _extract_manifestation_properties {
                 };
             }
             if ($name) {
-                push @{$properties_ref->{$manifestation_uri}}, {
+                push @{$properties_ref->{$instance_uri}}, {
                     property_uri => "${bffi_ns}publisherName",
                     property_key => 'publisherName',
                     value_type => 'literal',
@@ -548,7 +520,7 @@ sub _extract_manifestation_properties {
                 };
             }
             if ($date) {
-                push @{$properties_ref->{$manifestation_uri}}, {
+                push @{$properties_ref->{$instance_uri}}, {
                     property_uri => "${bffi_ns}publicationDate",
                     property_key => 'publicationDate',
                     value_type => 'literal',
@@ -563,7 +535,7 @@ sub _extract_manifestation_properties {
     if (my $field = $marc_record->field('300')) {
         my $extent = join(' ', map { $_->[1] } $field->subfield('a'));
         if ($extent) {
-            push @{$properties_ref->{$manifestation_uri}}, {
+            push @{$properties_ref->{$instance_uri}}, {
                 property_uri => "${bffi_ns}extent",
                 property_key => 'extent',
                 value_type => 'literal',
@@ -575,7 +547,7 @@ sub _extract_manifestation_properties {
     # Media type (from 337)
     if (my $field = $marc_record->field('337')) {
         if (my $media = $field->subfield('a')) {
-            push @{$properties_ref->{$manifestation_uri}}, {
+            push @{$properties_ref->{$instance_uri}}, {
                 property_uri => "${bffi_ns}mediaType",
                 property_key => 'mediaType',
                 value_type => 'literal',
@@ -587,7 +559,7 @@ sub _extract_manifestation_properties {
     # Carrier type (from 338)
     if (my $field = $marc_record->field('338')) {
         if (my $carrier = $field->subfield('a')) {
-            push @{$properties_ref->{$manifestation_uri}}, {
+            push @{$properties_ref->{$instance_uri}}, {
                 property_uri => "${bffi_ns}carrierType",
                 property_key => 'carrierType',
                 value_type => 'literal',
@@ -601,7 +573,7 @@ sub _extract_manifestation_properties {
         if (my $field = $marc_record->field($tag)) {
             my $series = $field->subfield('a') || '';
             if ($series) {
-                push @{$properties_ref->{$manifestation_uri}}, {
+                push @{$properties_ref->{$instance_uri}}, {
                     property_uri => "${bffi_ns}series",
                     property_key => 'series',
                     value_type => 'literal',
@@ -615,61 +587,11 @@ sub _extract_manifestation_properties {
     # Electronic locator (from 856)
     if (my $field = $marc_record->field('856')) {
         if (my $url = $field->subfield('u')) {
-            push @{$properties_ref->{$manifestation_uri}}, {
+            push @{$properties_ref->{$instance_uri}}, {
                 property_uri => "${bffi_ns}electronicLocator",
                 property_key => 'electronicLocator',
                 value_type => 'resource',
                 value_text => $url,
-            };
-        }
-    }
-}
-
-sub _extract_item_properties {
-    my ($self, $marc_record, $item_uri, $properties_ref) = @_;
-
-    my $bffi_ns = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_namespace('bffi');
-
-    # Location (from 852)
-    if (my $field = $marc_record->field('852')) {
-        if (my $location = $field->subfield('a')) {
-            push @{$properties_ref->{$item_uri}}, {
-                property_uri => "${bffi_ns}location",
-                property_key => 'location',
-                value_type => 'literal',
-                value_text => $location,
-            };
-        }
-        if (my $callno = $field->subfield('h')) {
-            push @{$properties_ref->{$item_uri}}, {
-                property_uri => "${bffi_ns}shelfMark",
-                property_key => 'shelfMark',
-                value_type => 'literal',
-                value_text => $callno,
-            };
-        }
-    }
-
-    # Holdings (from 866)
-    if (my $field = $marc_record->field('866')) {
-        if (my $holdings = $field->subfield('a')) {
-            push @{$properties_ref->{$item_uri}}, {
-                property_uri => "${bffi_ns}enumerationAndChronology",
-                property_key => 'enumerationAndChronology',
-                value_type => 'literal',
-                value_text => $holdings,
-            };
-        }
-    }
-
-    # Item info (from 876)
-    if (my $field = $marc_record->field('876')) {
-        if (my $barcode = $field->subfield('p')) {
-            push @{$properties_ref->{$item_uri}}, {
-                property_uri => "${bffi_ns}barcode",
-                property_key => 'barcode',
-                value_type => 'literal',
-                value_text => $barcode,
             };
         }
     }
@@ -693,8 +615,8 @@ sub store_items_from_koha {
     my @resources_to_insert;
     my @links_to_insert;
 
-    # Get the Manifestation resource for this biblio to link items to
-    my $manifestation = $self->_find_manifestation_for_biblio($biblio_id);
+    # Get the Instance resource for this biblio to link items to
+    my $instance = $self->_find_instance_for_biblio($biblio_id);
 
     my $bffi_ns = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping::get_namespace('bffi');
 
@@ -712,17 +634,17 @@ sub store_items_from_koha {
             source_format => 'marc21',
         };
 
-        # Link Manifestation to Item via hasItem/itemOf
-        if ($manifestation) {
+        # Link Instance to Item via hasItem/itemOf
+        if ($instance) {
             push @links_to_insert, {
-                source_uri => $manifestation->{uri},
+                source_uri => $instance->{uri},
                 target_uri => $item_uri,
                 relationship_type => 'hasItem',
                 relationship_uri => "${bffi_ns}hasItem",
             };
             push @links_to_insert, {
                 source_uri => $item_uri,
-                target_uri => $manifestation->{uri},
+                target_uri => $instance->{uri},
                 relationship_type => 'itemOf',
                 relationship_uri => "${bffi_ns}itemOf",
             };
@@ -741,12 +663,12 @@ sub store_items_from_koha {
     return $result;
 }
 
-sub _find_manifestation_for_biblio {
+sub _find_instance_for_biblio {
     my ($self, $biblio_id) = @_;
 
     my $sth = $self->dbh->prepare(
         "SELECT uri FROM record_resources
-         WHERE biblio_id = ? AND resource_type = 'Manifestation'
+         WHERE biblio_id = ? AND resource_type IN ('Instance', 'Manifestation')
          LIMIT 1"
     );
     $sth->execute($biblio_id);
@@ -999,8 +921,8 @@ sub _rebuild_summaries {
 
         if ($type eq 'Work') {
             $rebuilder->rebuild_work_summary($res->{id});
-        } elsif ($type eq 'Manifestation' || $type eq 'Instance') {
-            $rebuilder->rebuild_manif_summary($res->{id});
+        } elsif ($type eq 'Instance' || $type eq 'Manifestation') {
+            $rebuilder->rebuild_instance_summary($res->{id});
         } elsif (grep { $_ eq $type } qw(Person Organization Meeting Family)) {
             $rebuilder->rebuild_agent_summary($res->{id});
         }

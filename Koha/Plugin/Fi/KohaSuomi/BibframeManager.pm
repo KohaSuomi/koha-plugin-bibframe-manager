@@ -116,6 +116,7 @@ sub upgrade {
     my $sql_dir = $self->mbf_dir() . '/sql';
     my @sql_files = (
         '01_core_tables.sql',
+        '06_rename_manif_summary_to_instance.sql',
         '02_summary_tables.sql',
         '03_component_parts.sql',
         '04_format_mappings_graphs.sql',
