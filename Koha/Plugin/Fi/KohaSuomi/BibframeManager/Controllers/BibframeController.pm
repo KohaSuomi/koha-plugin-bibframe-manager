@@ -170,7 +170,7 @@ sub convert {
         }
 
         # Determine conversion standard
-        my $standard = $body->{standard} || 'bffi';
+        my $standard = $body->{standard} || 'loc';
 
         # Convert to Bibframe
         my $converter = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe->new();
@@ -232,18 +232,37 @@ sub convert {
             );
         }
 
+        # Convert to BFFI (4-level WEMI) by first running the LoC XSLT conversion
+        # and then deriving the 4-level structure from the LoC 3-level output.
+        my $xslt_path = $body->{xslt_path} || undef;
+        my %xslt_opts = ( base_uri => $base_uri );
+        $xslt_opts{xslt_path} = $xslt_path if $xslt_path;
+
+        my $rdfxml = $converter->convert_record_with_xslt($marc_record, %xslt_opts);
+        unless ($rdfxml) {
+            return $c->render(
+                status => 500,
+                openapi => { error => 'XSLT conversion produced no output' }
+            );
+        }
+
+        # Parse LoC output into triples
+        my $loc_triples = $converter->rdf_to_triples($rdfxml);
+
+        # Derive BFFI 4-level WEMI from the LoC 3-level triples
         my $full_base_uri = $base_uri;
         $full_base_uri .= $biblionumber if $biblionumber;
-        
-        my $triples = $converter->convert_record_to_Bibframe(
-            $marc_record,
+        $full_base_uri =~ s{/?$}{/};
+
+        my $triples = $converter->derive_wemi_from_loc(
+            $loc_triples,
             base_uri => $full_base_uri
         );
 
         unless ($triples && @$triples) {
             return $c->render(
                 status => 500,
-                openapi => { error => 'Conversion produced no triples' }
+                openapi => { error => 'WEMI derivation produced no triples' }
             );
         }
 
@@ -273,7 +292,7 @@ sub convert {
                 triple_count => scalar(@$triples),
                 biblionumber => $biblionumber,
                 metadata_id => $metadata_id,
-                message => 'MARC21 record successfully converted to Bibframe'
+                message => 'MARC21 record successfully converted to BFFI (4-level WEMI derived from LoC BIBFRAME)'
             }
         );
 

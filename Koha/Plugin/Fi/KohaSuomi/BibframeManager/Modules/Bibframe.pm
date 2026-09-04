@@ -874,6 +874,222 @@ sub rdf_to_triples {
     return \@triples;
 }
 
+=head2 derive_wemi_from_loc
+
+    my $wemi_triples = $converter->derive_wemi_from_loc($loc_triples, %options);
+
+Derives a BFFI 4-level WEMI (Work -> Expression -> Manifestation -> Item) graph
+from the LoC 3-level BIBFRAME output (Work -> Instance -> Item).
+
+The LoC output has Work and Instance as the top-level entities. This method:
+1. Keeps the LoC Work as the derived Work
+2. Moves expression-level properties (language, edition, note) from Work to a
+   new derived Expression
+3. Renames LoC Instance to a BFFI Manifestation
+4. Links Work -> Expression -> Manifestation -> Item
+
+Parameters:
+    $loc_triples - Arrayref of LoC BIBFRAME triple hashrefs (from rdf_to_triples)
+    %options:
+        base_uri - Base URI stem for minting derived entity URIs
+
+Returns:
+    Arrayref of BFFI triple hashrefs
+
+=cut
+
+sub derive_wemi_from_loc {
+    my ($self, $loc_triples, %options) = @_;
+
+    my $base_uri = $options{base_uri} || 'http://urn.fi/URN:NBN:fi:bib:';
+    my $bffi_ns = $Bibframe_NS || 'http://urn.fi/URN:NBN:fi:schema:bffi:';
+
+    my @wemi;
+
+    # Identify LoC resources by type
+    my %resources;   # subject -> resource data
+    my @work_subjects;
+    my @instance_subjects;
+
+    my $bf_ns = 'http://id.loc.gov/ontologies/bibframe/';
+
+    for my $t (@$loc_triples) {
+        next unless $t->{predicate} =~ /rdf:type$/ && $t->{object_type} eq 'uri';
+        my $obj = $t->{object};
+        if ($obj eq "${bf_ns}Work") {
+            push @work_subjects, $t->{subject};
+        } elsif ($obj eq "${bf_ns}Instance") {
+            push @instance_subjects, $t->{subject};
+        }
+    }
+
+    return [] unless @work_subjects || @instance_subjects;
+
+    # Preferred Work and Instance (first by URI pattern /resources/works/ and /resources/instances/)
+    my ($work_uri, $instance_uri);
+    for my $w (@work_subjects) {
+        if ($w =~ m{/resources/works/}) { $work_uri = $w; last; }
+    }
+    $work_uri ||= $work_subjects[0] if @work_subjects;
+
+    for my $i (@instance_subjects) {
+        if ($i =~ m{/resources/instances/}) { $instance_uri = $i; last; }
+    }
+    $instance_uri ||= $instance_subjects[0] if @instance_subjects;
+
+    # Build derived URIs (strip LoC /resources/works/ or /resources/instances/ prefix)
+    my $control_number;
+    if ($work_uri && $work_uri =~ m{/resources/works/(.+)$}) {
+        $control_number = $1;
+    } elsif ($instance_uri && $instance_uri =~ m{/resources/instances/(.+)$}) {
+        $control_number = $1;
+    }
+
+    my $derived_work_uri = $work_uri;
+    my $derived_expression_uri = "${base_uri}expression/${control_number}";
+    my $derived_manifestation_uri = $instance_uri;
+    my $derived_item_uri = "${base_uri}item/${control_number}";
+
+    # --- Expression-level properties that should move from Work to Expression ---
+    # These denote the specific realization (language, edition, notes, content type)
+    my %expression_props = map { $_ => 1 } qw(
+        language editionNote note reproduction supplementaryContent contentType
+    );
+
+    # ---------- Pass 1: emit Work + Expression triples ----------
+    my $work = $work_uri ? $self->_find_resource_triples($loc_triples, $work_uri) : [];
+    my $instance = $instance_uri ? $self->_find_resource_triples($loc_triples, $instance_uri) : [];
+
+    # Emit derived Work (from LoC Work)
+    if ($work_uri) {
+        push @wemi, {
+            subject => $derived_work_uri,
+            predicate => 'rdf:type',
+            object => "${bffi_ns}Work",
+            object_type => 'uri',
+        };
+
+        for my $t (@$work) {
+            my $pred = $t->{predicate};
+            next if $pred =~ /rdf:type$/;
+            next if $pred =~ m{/hasInstance$};
+            next if $pred =~ m{/instanceOf$};
+
+            # Extract localname to test against expression property set
+            my ($localname) = $pred =~ m{[/#]([^/#]+)$};
+
+            if ($pred eq 'rdfs:label' || $pred =~ m{rdfs-label$}) {
+                push @wemi, {
+                    subject => $derived_work_uri,
+                    predicate => $pred,
+                    object => $t->{object},
+                    object_type => 'literal',
+                    ($t->{lang} ? (lang => $t->{lang}) : ()),
+                };
+                next;
+            }
+
+            # Move expression-level properties to the Expression
+            if ($localname && $expression_props{$localname}) {
+                my $obj = {
+                    subject => $derived_expression_uri,
+                    predicate => $pred,
+                    object => $t->{object},
+                    object_type => $t->{object_type},
+                    ($t->{lang} ? (lang => $t->{lang}) : ()),
+                };
+                push @wemi, $obj;
+                next;
+            }
+
+            # Keep everything else at the Work level
+            my $obj = {
+                subject => $derived_work_uri,
+                predicate => $pred,
+                object => $t->{object},
+                object_type => $t->{object_type},
+                ($t->{lang} ? (lang => $t->{lang}) : ()),
+            };
+            push @wemi, $obj;
+        }
+
+        # Type the Expression
+        push @wemi, {
+            subject => $derived_expression_uri,
+            predicate => 'rdf:type',
+            object => "${bffi_ns}Expression",
+            object_type => 'uri',
+        };
+
+        # Link Work -> Expression
+        push @wemi, {
+            subject => $derived_work_uri,
+            predicate => "${bffi_ns}hasExpression",
+            object => $derived_expression_uri,
+            object_type => 'uri',
+        };
+        push @wemi, {
+            subject => $derived_expression_uri,
+            predicate => "${bffi_ns}expressionOf",
+            object => $derived_work_uri,
+            object_type => 'uri',
+        };
+    }
+
+    # ---------- Pass 2: emit Manifestation (from LoC Instance) ----------
+    if ($instance_uri) {
+        # Type as Manifestation (keep original Instance as additional type for roundtrip)
+        push @wemi, {
+            subject => $derived_manifestation_uri,
+            predicate => 'rdf:type',
+            object => "${bffi_ns}Manifestation",
+            object_type => 'uri',
+        };
+
+        for my $t (@$instance) {
+            my $pred = $t->{predicate};
+            next if $pred =~ /rdf:type$/;
+            next if $pred =~ m{/instanceOf$};
+            next if $pred =~ m{/hasItem$};
+
+            my $obj = {
+                subject => $derived_manifestation_uri,
+                predicate => $pred,
+                object => $t->{object},
+                object_type => $t->{object_type},
+                ($t->{lang} ? (lang => $t->{lang}) : ()),
+            };
+            push @wemi, $obj;
+        }
+
+        # Link Expression -> Manifestation
+        push @wemi, {
+            subject => $derived_expression_uri,
+            predicate => "${bffi_ns}manifestationOfExpression",
+            object => $derived_manifestation_uri,
+            object_type => 'uri',
+        };
+        push @wemi, {
+            subject => $derived_manifestation_uri,
+            predicate => "${bffi_ns}expressionManifested",
+            object => $derived_expression_uri,
+            object_type => 'uri',
+        };
+    }
+
+    return \@wemi;
+}
+
+sub _find_resource_triples {
+    my ($self, $triples, $subject) = @_;
+
+    my @found;
+    for my $t (@$triples) {
+        push @found, $t if $t->{subject} eq $subject;
+    }
+    return \@found;
+}
+
 sub _extract_rdf_property {
     my ($self, $child_node, $resource, $ns_map, $all_resources) = @_;
 
