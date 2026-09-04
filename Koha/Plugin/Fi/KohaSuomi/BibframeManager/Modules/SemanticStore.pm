@@ -8,6 +8,7 @@ use JSON;
 use Digest::MD5 qw(md5_hex);
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Mapping;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryRebuilder;
 use C4::Context;
 
 =head1 NAME
@@ -167,6 +168,13 @@ sub store_marc_record {
     $result->{expression_uri} = $expression_uri;
     $result->{manifestation_uri} = $manifestation_uri;
 
+    # Rebuild summary table rows for the entities just stored
+    $self->_rebuild_summaries({
+        $work_uri          => 'Work',
+        $expression_uri    => 'Expression',
+        $manifestation_uri => 'Manifestation',
+    });
+
     return $result;
 }
 
@@ -297,6 +305,9 @@ sub store_bibframe_rdf {
         \@properties_to_insert,
         \@links_to_insert
     );
+
+    # Rebuild summary table rows for the entities just stored
+    $self->_rebuild_summaries(\%resources_to_insert);
 
     return $result;
 }
@@ -972,6 +983,28 @@ sub _find_existing_resource {
     );
     $sth->execute($uri);
     return $sth->fetchrow_hashref();
+}
+
+# Rebuilds summary table rows for resources whose URIs were just stored.
+# Accepts a hashref of uri => resource_type (or a list of resource URIs).
+sub _rebuild_summaries {
+    my ($self, $resource_uris) = @_;
+
+    my $rebuilder = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryRebuilder->new();
+
+    for my $uri (keys %$resource_uris) {
+        my $type = $resource_uris->{$uri};
+        my $res = $self->_find_existing_resource($uri);
+        next unless $res;
+
+        if ($type eq 'Work') {
+            $rebuilder->rebuild_work_summary($res->{id});
+        } elsif ($type eq 'Manifestation' || $type eq 'Instance') {
+            $rebuilder->rebuild_manif_summary($res->{id});
+        } elsif (grep { $_ eq $type } qw(Person Organization Meeting Family)) {
+            $rebuilder->rebuild_agent_summary($res->{id});
+        }
+    }
 }
 
 sub _execute_storage {
