@@ -88,6 +88,7 @@ sub install() {
         '02_summary_tables.sql',
         '03_component_parts.sql',
         '04_format_mappings_graphs.sql',
+        '05_work_clustering.sql',
     );
 
     my $dbh = C4::Context->dbh;
@@ -118,6 +119,7 @@ sub upgrade {
         '02_summary_tables.sql',
         '03_component_parts.sql',
         '04_format_mappings_graphs.sql',
+        '05_work_clustering.sql',
     );
 
     my $dbh = C4::Context->dbh;
@@ -149,6 +151,7 @@ sub uninstall() {
         record_graphs
         record_format_mappings
         record_component_parts
+        work_match_candidates
         record_agent_summary
         record_manif_summary
         record_work_summary

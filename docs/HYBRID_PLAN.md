@@ -18,9 +18,10 @@
 7. Component Parts Table (Plan A)
 8. Format Mappings Table (Plan B)
 9. Elasticsearch Integration
-10. Data Flow
-11. Query Examples
-12. Implementation Phases
+10. [Search Integration Strategy](#search-integration-strategy)
+11. Data Flow
+12. Query Examples
+13. Implementation Phases
 
 ---
 
@@ -64,6 +65,25 @@ Plan A (typed columns) is fast but rigid. Plan B (EAV) is flexible but slow. The
 | **Elasticsearch** | Derived from summary + core tables | Search and discovery. Never the source of truth. |
 
 ---
+
+## Where Do Expression Entities Live?
+
+The plan keeps the **LoC BIBFRAME 3-level model (Work → Instance → Item) as the
+canonical stored form**. Expressions are **derived, never persisted**:
+
+- A merged cluster is a `record_resources` row of type `Work`, plus its Instances
+  tagged with `language` / `languageOfExpression` and `isTranslation` properties.
+- The 4-level WEMI Expression level is computed **on demand** — via
+  `Bibframe::derive_wemi_from_loc` on BFFI export (Phase 11b) and in the `wemi-4`
+  Elasticsearch model (Phase 12). It is never written to `record_resources`
+  (even though the `Expression` value exists in the `resource_type` ENUM).
+- The RDA relationship "these two translations are expressions of one Work" is
+  therefore answered persistently by the **merged Work + its per-Instance
+  language/translation properties**, not by stored Expression rows.
+
+This is a deliberate decision: it avoids dual bookkeeping between the derived
+Expression level and the canonical 3-level store, at the cost that the Expression
+entity itself exists only transiently at export/index time.
 
 ## Core Storage Layer (Plan B)
 
@@ -418,7 +438,7 @@ We use a **tiered pipeline**. Deterministic rules auto-accept the clear majority
 | 2 | Uniform title (130/240) + normalized creator + same `work_type` | **Auto-accept** |
 | 3 | Same-language identical normalized title + normalized creator + same `work_type` + date-compatible | **Auto-accept** |
 | 4 | Same-language near-match (edit distance) + same creator + same `work_type` + date-compatible | **Auto-accept** |
-| 5 | Explicit translation link (`translationof` / `translatedas`), **not** an adaptation | **Auto-accept** |
+| 5 | Explicit translation link (`translationof` / `translatedas`), **not** an adaptation, **no free-translation marker** | **Auto-accept** |
 | 6 | `is_translation=1` and `original_language` matches candidate work, **no adaptation marker** | **Auto-accept** |
 | 7 | Cross-language, no uniform title, no translation link | **Human review** |
 | 8 | Partial title / ambiguous creator / anonymous / no creator | **Human review** |
@@ -426,17 +446,22 @@ We use a **tiered pipeline**. Deterministic rules auto-accept the clear majority
 | 10 | **`work_type` mismatch** (serial vs monograph) | **Do not merge** |
 | 11 | Title + creator match but **date/edition conflict** | **Human review** |
 | 12 | **Creator identity uncertain** (same name, ambiguous date/identifier) | **Human review** |
+| 13 | **Free translation** detected (explicit designator: `freelyTranslatedAs` / 700/758 `$i` "freely translated", "retold", "paraphrased", "rendered as", or a translation hint with no target-language title form) | **Do not merge** — link as related Work via `freelyTranslatedFrom`/`freelyTranslatedAs`; human-only if genuinely ambiguous |
 
 > **Confirmations (defaults):**
 > - **Adaptations** are never auto-merged; they become separate Works linked via `adaptationof`/related-Work relationship. If a relationship is genuinely ambiguous, it goes to the human queue.
+> - **Free translations** are never auto-merged either. Per RDA, a translation that is creative enough forms a *new* Work of its own, related to the source Work as freely translated (not as the same Work in another language). They are linked via `freelyTranslatedFrom`/`freelyTranslatedAs` instead of merged.
 > - **Date compatibility** uses a broad tolerance (e.g., publication dates within the same era / reasonable window, or same stemming edition). Exact-year equality is *not* required; an obviously conflicting date on an otherwise identical title+creator forces human review.
 > - **Reversal/un-merge** in v1 is a simple "mark reverted + note" record with a stored snapshot for restoring prior separate-Work state.
 
 ### Candidate Review Queue Table
 
 Rules 7, 8, 11, 12 (cross-language, ambiguous creator/anonymous, date/edition
-conflict, creator identity uncertain) produce candidate pairs stored in a dedicated
-table. Rules 9 and 10 (adaptation, work_type mismatch) are hard blocks and do not
+conflict, creator identity uncertain) and 13 (free translation without an
+explicit designator — see [Free translations are new Works](#free-translations-are-new-works))
+produce candidate pairs stored in a dedicated
+table. Rules 9, 10 and 13-with-designator (adaptation, work_type mismatch,
+explicit free translation) are hard blocks and do not
 enter the queue. Only candidates reaching the queue require human decision.
 
 ```sql
@@ -446,8 +471,8 @@ CREATE TABLE work_match_candidates (
     resource_b_id       BIGINT UNSIGNED NOT NULL,
     match_tier          TINYINT NOT NULL,          -- tier that generated this candidate
 
-    -- Classification of the relationship (drives rule 9/10 gates)
-    relationship_type   ENUM('translation','edition','adaptation','unknown')
+    -- Classification of the relationship (drives rule 9/10/13 gates)
+    relationship_type   ENUM('translation','edition','adaptation','freetranslation','unknown')
                            DEFAULT 'unknown',
     work_type_a         VARCHAR(32),               -- 'serial' | 'monograph'
     work_type_b         VARCHAR(32),
@@ -503,10 +528,11 @@ A web page in the plugin controller + template:
 - Fields shown: title, creator (with authority signals: date, ISNI/VIAF), language,
   original_language, uniform title, identifiers, format, work_type (serial/monograph),
   publication date, edition statement
-- Badge showing `relationship_type` (translation / edition / adaptation / unknown)
+- Badge showing `relationship_type` (translation / edition / adaptation / **free translation** / unknown)
 - Suggestion banner: "System suggests: likely same Work (evidence: ...)"
 - (Future) "System suggests original title: ..." hint when the LLM tier is enabled
-- Actions: **Accept as same Work** / **Reject** / **Reject as different Work (adaptation)** / **Skip** / **Back**
+- Actions: **Accept as same Work** / **Reject** / **Reject as different Work (adaptation)** / **Reject as new Work (free translation)** / **Skip** / **Back**
+  - The **free translation** action links the two Works via `freelyTranslatedFrom`/`freelyTranslatedAs` (a related-Work link, no merge) and records `relationship_type='freetranslation'`.
 
 **Batch actions**
 - "Accept all selected" / "Reject all selected" (with optional note)
@@ -589,6 +615,39 @@ The `relationship_type` on `work_match_candidates` classifies each candidate:
 is explicitly a translation *and* no adaptation marker is present. Any adaptation
 signal forces the candidate into rule 9 (**do not merge**) or, if ambiguous, the
 human queue.
+
+### Free Translations Are New Works
+
+RDA treats a translation that is creative enough as a **new Work** of its own —
+a *freely translated* work — related to the source Work, not as an Expression of
+it. This sits between the two extreme buckets of "translation → merge" and
+"adaptation → separate Work".
+
+**Decision:** free translations are **never auto-merged** (rule 13). They become
+distinct Works linked back to the source via `freelyTranslatedFrom` /
+`freelyTranslatedAs` (mirroring the `translationof`/`translatedas` naming, mapped
+to RDA/LOC free-translation or `relatedWork` vocabulary). Only pairs that are
+genuinely ambiguous reach the human queue.
+
+| MARC signal | Relationship | Merge? |
+|-------------|--------------|--------|
+| 700/758 `$i` designator "freely translated", "retold", "paraphrased", "rendered as", "adapted as book" | `freetranslation` | **do not merge** — link via `freelyTranslatedAs`/`freelyTranslatedFrom` |
+| 765 → `translationof` / 767 → `translatedas` + target-language title shows **no** trace of the source title (different invented title) | `freetranslation` | **do not merge** — human queue |
+| 765/767 translation link, no free-translation marker, recognizable translation title | `translation` | merge |
+| 041 `$h` translation, no other marker | `translation` | merge |
+
+**Worked example — Tagore's গীতাঞ্জলি (Gitanjali):**
+- Finnish translations by Eino Leino (*Uhrilauluja*) and Hannele Pohjanmies
+  (*Gitanjali*) are ordinary translations of the Bengali original → merge into one
+  Work (rule 6, or rule 7 → human review when 041 `$h` is absent).
+- Tagore's own English *Song Offerings* is a *self-translation* that many treat as
+  a **separate English Work**, not an Expression of the Bengali গীতাঞ্জলি. If a
+  cataloger marks it as free translation (or the reviewer accepts the
+  `freetranslation` classification), it becomes a related Work linked via
+  `freelyTranslatedFrom`/`freelyTranslatedAs`; it never merges.
+- The **original** is the Bengali গীতাঞ্জলি, which Fennica will not hold. If only
+  translations are local, rule 4 triggers: look up the Bengali original
+  externally (LoC/OCLC) or leave `original_pending = 1` until it is found.
 
 ### Same Title, Different Work (false positives)
 
@@ -697,6 +756,7 @@ property). Final decisions remain in human-controlled fields.
 8. **Mercy of date tolerance:** what is an acceptable publication-date window for treating identical title+creator as the same Work, before forcing human review?
 9. **Creator authority coverage:** how many records have creator dates (100 `$d`) or identifiers (ISNI/VIAF) available to corroborate authority identity, versus relying only on normalized name?
 10. **Serial fraction:** what share of records are continuing resources (Leader/07 or 008/21 `i`/`s`)? This determines how much serial-specific Work boundary logic matters.
+11. **Free-translation frequency:** how common are explicit free-translation designators (700/758 `$i` "freely translated", "retold", "paraphrased") in the data, and how many translation pairs show an invented (non-translating) title that would trigger the rule-13 human queue?
 
 ---
 
@@ -863,6 +923,60 @@ option or the `BIBFRAME_ES_MODEL` env var, and at build time via the
 }
 ```
 
+### Search Integration Strategy
+
+**Recommendation: Option 1 (plugin's own search) + lightweight bridge into Koha.**
+
+The Elasticsearch index is currently write-only — `SearchIndex.pm` indexes
+documents but has no search/query method, and there is no API endpoint to
+search the index. To make BIBFRAME data discoverable, two additions are needed:
+
+#### Part A: Plugin-internal ES search (Option 1)
+
+The plugin provides its own full-text search interface, querying the
+`bibframe_entities_*` indices directly. No Koha core files are modified.
+
+| Component | What | Why |
+|-----------|------|-----|
+| `SearchIndex.pm` query methods | Add `search($query, %opts)` and `suggest($prefix)` to `Modules/SearchIndex.pm`. Uses `Search::Elasticsearch->search()` against the plugin's own index. Supports multi-field query (`work.label`, `agents.name`, `subjects.term`, `manifestation.publisher`), faceted filtering (language, agent role, subject type, publication date), and autocomplete via the `suggest` field. | The index is read/write, not write-only. |
+| `GET /bibframe/search` API route | New endpoint in `BibframeController.pm` + `openapi.yaml`. Accepts `q` (query string), `model` (loc-3/wemi-4/loc-raw), `limit`, `offset`, and optional facet filters. Returns a paginated result list with `biblio_id`, `work.label`, `agents`, `manifestation.date`, and a relevance score. | Exposes ES search to the Vue frontend and any external consumer. |
+| Search results Vue component | New component extending the existing `SearchRecords.js` pattern. Free-text input, result cards with Work title / agents / publication info, facet sidebar (language, subject, date range), and a "View BIBFRAME" action that loads the full entity graph via the existing `/bibframe/summary` endpoint. | Users can search the BIBFRAME index without leaving the plugin tool. |
+
+#### Part B: Lightweight bridge into Koha's search results
+
+A small JS injection places a "BIBFRAME" link on Koha's existing OPAC/staff
+client search results and detail pages, deep-linking into the plugin tool.
+
+| Component | What | Why |
+|-----------|------|-----|
+| `intranet_client_js` / `opac_client_js` hook | Plugin registers a small JS snippet via Koha's plugin system. On catalog search results and detail pages, it adds a link/button per biblio: `/cgi-bin/koha/plugins/run/plug -p Koha::Plugin::Fi::KohaSuomi::BibframeManager&cl=tool&biblio_id=N`. | Users see BIBFRAME where they already search — no navigation to a separate tool required. |
+| Deep-link param in `tool.tt` | The Vue app reads `biblio_id` from the URL query string. If present, it auto-loads that record's BIBFRAME graph (via `/bibframe/summary`) instead of showing the empty search form. | Seamless hand-off from Koha's search → plugin's BIBFRAME view. |
+
+#### Why not modify Koha's core search?
+
+Modifying `opac-search.pl`, `results.tt`, or staff client result templates is
+technically possible but architecturally wrong for a plugin:
+
+- **Upgrade fragility** — every Koha release could break patched templates.
+- **Plugin boundary** — plugins extend via hooks, not by patching core files.
+- **Maintenance burden** — tracking upstream changes to Koha's search UI.
+- **Installation barrier** — admins hesitate to install plugins that alter
+  core behavior.
+
+The Option 1 + bridge approach keeps the plugin **self-contained** while still
+being visible from Koha's native search. The hard part (data pipeline: MARC →
+semantic tables → summary tables → ES sync → documents) is already built; the
+query side is a small addition on top.
+
+#### Updated implementation phases
+
+| Phase | What | Description |
+|-------|------|-------------|
+| 21 | ES search methods | Add `search()` and `suggest()` to `Modules/SearchIndex.pm`. Multi-field query, faceted filtering, autocomplete. |
+| 22 | Search API endpoint | `GET /bibframe/search` in `BibframeController.pm` + `openapi.yaml`. Query params: `q`, `model`, `limit`, `offset`, facet filters. |
+| 23 | Search results UI | Vue search results component with free-text input, result cards, facet sidebar, "View BIBFRAME" deep-link to entity editor. |
+| 24 | Koha search bridge | `intranet_client_js` / `opac_client_js` hook injecting per-biblio "BIBFRAME" links into Koha's search results and detail pages. Deep-link param in `tool.tt` for auto-loading. |
+
 ---
 
 ## Data Flow
@@ -897,8 +1011,9 @@ BIBFRAME RDF ───→ RDF Parser ───┘    (dedup, extract,       reco
 
 1. **Preprocess:** normalize titles, NACO-normalize creators, extract language + original_language + identifiers.
 2. **Auto-merge (rules 1–6):** shared identifier, uniform title, identical title, near-title, explicit translation link, `is_translation`+`original_language`.
-3. **Human review (rules 7–8):** cross-language / ambiguous candidates → `work_match_candidates` with `status='pending'`.
-4. **Merge on approval:** accepted candidates create/reuse a single `Work`, link Expressions, rebuild summaries.
+3. **Hard blocks (rules 9, 10, 13):** adaptation, work_type mismatch, explicit free translation → separate Work linked via related-work/free-translation link; never auto-merged.
+4. **Human review (rules 7–8, 11–13-ambiguous):** cross-language / ambiguous / date-conflict / free-translation-without-designator candidates → `work_match_candidates` with `status='pending'`.
+5. **Merge on approval:** accepted candidates create/reuse a single `Work`, link Expressions, rebuild summaries. Free translations are linked (`freelyTranslatedFrom`/`freelyTranslatedAs`) instead of merged.
 
 ### Writing Data
 
@@ -1019,13 +1134,17 @@ LIMIT 20;
 | 11b | BFFI 4-level WEMI generator | `Modules/BFFIGenerator.pm` — derives the 4-level WEMI (Work → Expression → Manifestation → Item) from the stored LoC 3-level graph via `Bibframe::derive_wemi_from_loc` on BFFI export only. Expression is never persisted. |
 | 12 | Elasticsearch sync | `Modules/SearchIndex.pm` — builds `record_entities` documents from summary + core tables (work/agents/manifestation/component_parts/suggest) and syncs to ES. The BIBFRAME→document field mapping is declarative: `config/es_mapping.yaml` (loaded by `Modules/Esmapping.pm`) maps semantic storage shapes onto doc fields, so SearchIndex is data-driven rather than hardcoded. Plugin-specific config (decoupled from Koha's ES), read from the `bibframe_manager` koha-conf.xml stanza / `BIBFRAME_ES_*` env / constructor args. Sync is off by default (`es_enabled`), so the external ES dependency never breaks ordinary storage. **Configurable document models** via the `es_mapping.yaml` `model:` selector: `loc-3` (default, one flattened doc per biblio), `wemi-4` (adds a derived `expressions` array under `work`, computed at index time via `Bibframe::derive_wemi_from_loc` from the stored LoC triples — Expression is never persisted, LoC 3-level stays canonical), and `loc-raw` (one doc per stored LoC entity, `_id` = resource URI; via `build_documents`). Index names are namespaced per model (`<index_prefix>_<model>`): `bibframe_entities_loc-3` / `_wemi-4` / `_loc-raw`, and an explicitly configured `es_index` is used verbatim. API: `ensure_index`, `build_document`, `build_documents`, `index_document`, `index_biblios`, `delete_document`, `rebuild_all`, `sync_biblio`; integrated into `SemanticStore._sync_search_index`; cronjob `cronjobs/sync_search_index.pl` (`--all/--biblionumber/--file/--range/--index/--delete/--model`). |
 | 13 | API updates | `Modules/SummaryReader.pm` — reads the API's fast side from the typed summary tables (`record_work_summary`, `record_instance_summary`, `record_agent_summary`) instead of `biblio_metadata`. `get_for_biblio($biblio_id)` → work + instances + agents; `get_work_for_biblio`, `get_work`, `get_instances_for_biblio`, `get_instance`, `get_agents_for_work` (agents joined via `record_links` creator/contributor with role aut/ctb). Served by `BibframeController::summary` (`GET /bibframe/summary?biblio_id`) added to `openapi.yaml`. |
-| 14 | Match candidate DDL | Create `work_match_candidates` table |
-| 15 | Clustering engine | `Modules/WorkClusterer.pm` — deterministic rules 1–12 (incl. adaptation, work_type, date, creator-authority gates) auto-merge or route to review |
-| 16 | Review queue UI | Controller + template for batch human review of `work_match_candidates` (relationship_type, work_type, adaptation action) |
+| 14 | Match candidate DDL | Create `sql/05_work_clustering.sql` (wired into `install()` / `upgrade()` / `uninstall()`) with `work_match_candidates`, `relationship_type` ENUM incl. `freetranslation` |
+| 15 | Clustering engine | `Modules/WorkClusterer.pm` — deterministic rules 1–13 (incl. adaptation, work_type, date, creator-authority gates, free-translation designator) auto-merge or route to review |
+| 16 | Review queue UI | Controller + template for batch human review of `work_match_candidates` (relationship_type, work_type, adaptation action, **free translation → link as related Work**) |
 | 17 | Merge materialization | Accept → create/reuse Work, link Expressions, rebuild summaries; support un-merge reversal |
 | 18 | External original lookup | `Modules/ExternalOriginal.pm` — query external sources (OCLC/LOC/Fennica) for rule-4 originals; surface matches in review queue |
 | 19 | Creator authority matcher | `Modules/AuthorityMatcher.pm` — cluster agents, corroborate identity via dates/ISNI/VIAF |
 | 20 | *(Future, optional)* LLM original-title tier | Suggest `suggested_original_title` as evidence only; human still decides |
+| 21 | ES search methods | Add `search()` and `suggest()` to `Modules/SearchIndex.pm`. Multi-field query, faceted filtering, autocomplete via the `suggest` field. |
+| 22 | Search API endpoint | `GET /bibframe/search` in `BibframeController.pm` + `openapi.yaml`. Query params: `q`, `model`, `limit`, `offset`, facet filters. Returns paginated results with biblio_id, work label, agents, manifestation date, relevance score. |
+| 23 | Search results UI | Vue search results component with free-text input, result cards, facet sidebar (language, subject, date range), "View BIBFRAME" deep-link to entity editor. |
+| 24 | Koha search bridge | `intranet_client_js` / `opac_client_js` hook injecting per-biblio "BIBFRAME" links into Koha's search results and detail pages. Deep-link param in `tool.tt` for auto-loading via `/bibframe/summary`. |
 
 ---
 
@@ -1040,6 +1159,8 @@ LIMIT 20;
 | Graph tables | Plan B | Groups resources into coherent descriptions |
 | Shared authority tables | Plan A (via summary) | Agent/subject dedup with fast browsing |
 | Language & translation handling | Plan A + B | Original language + is_translation flags for WEMI |
-| Work clustering & human review | New | Deterministic auto-merge + batch human-approval queue (no LLM) |
+| Work clustering & human review | New | Deterministic auto-merge + batch human-approval queue (no LLM); adaptations and free translations never auto-merge (link as related Works) |
+| Expression persistence | Decided | LoC 3-level canonical; Expression derived only (BFFI export / `wemi-4` ES) |
+| Search integration (Option 1 + bridge) | New | Plugin-internal ES search + JS bridge into Koha's native search results |
 | `biblio_id` naming | Plan A | Koha community convention |
 | `record_` prefix | Plan B | Format-agnostic naming |
