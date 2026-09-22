@@ -12,7 +12,7 @@
 #
 #   --engine=plugin Uses the plugin's own Bibframe conversion module
 #                   (Finnish BIBFRAME Implementation) and stores the result
-#                   in the biblio_metadata table or in per-record files.
+#                   in per-record files.
 
 use Modern::Perl;
 use Getopt::Long qw(GetOptions);
@@ -33,6 +33,18 @@ use File::Temp qw(tempfile);
 # Path to the marc2bibframe2 stylesheet bundled with this plugin -
 # adjust or override with --xsl
 my $DEFAULT_XSL = "$Bin/../config/marc2bibframe2.xsl";
+
+# Default base filename for plugin-engine output when --output is not given
+my $DEFAULT_PLUGIN_OUTPUT = 'bibframe';
+
+# File extensions for plugin-engine output formats
+my %PLUGIN_EXTENSIONS = (
+    'turtle'   => '.ttl',
+    'json-ld'  => '.jsonld',
+    'ntriples' => '.nt',
+    'rdfxml'   => '.rdf',
+    'json'     => '.json',
+);
 
 # Options
 my $biblionumber_str;
@@ -289,7 +301,6 @@ sub convert_with_plugin {
     my ($rows) = @_;
 
     my $converter = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe->new();
-    my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
 
     my $processed = 0;
     my $errors = 0;
@@ -297,7 +308,7 @@ sub convert_with_plugin {
 
     say "Processing $total biblionumber(s)..." if $verbose;
     say "Output format: $format" if $verbose;
-    say "Output file: $output_file" if $output_file && $verbose;
+    say "Output file: " . ($output_file || "$DEFAULT_PLUGIN_OUTPUT" . ($PLUGIN_EXTENSIONS{$format} || ".$format")) if $verbose;
     say "";
 
     foreach my $row (@$rows) {
@@ -329,17 +340,8 @@ sub convert_with_plugin {
 
             if ($dry_run) {
                 say "  Dry run: not saving biblionumber $biblionumber" if $verbose;
-            } elsif ($output_file) {
-                save_to_file($biblionumber, $triples, $format, $output_file, $total);
             } else {
-                say "  Saving to biblio_metadata table..." if $verbose;
-                my $id = $db->saveBibframeMetadata(
-                    $biblionumber,
-                    $triples,
-                    format => $format,
-                    schema => 'Bibframe'
-                );
-                say "  Saved with metadata ID: $id" if $verbose;
+                save_to_file($biblionumber, $triples, $format, $output_file || $DEFAULT_PLUGIN_OUTPUT, $total);
             }
 
             $processed++;
@@ -375,20 +377,15 @@ sub save_to_file {
     my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
     my $serialized = $db->serializeTriples($triples, $format);
 
-    # Determine file extension
-    my %extensions = (
-        'turtle'   => '.ttl',
-        'json-ld'  => '.jsonld',
-        'ntriples' => '.nt',
-        'rdfxml'   => '.rdf',
-        'json'     => '.json',
-    );
-
     # If processing multiple biblios, append biblionumber to filename
     my $filename = $output_file;
     if ($count > 1) {
-        my $ext = $extensions{$format} || ".$format";
+        my $ext = $PLUGIN_EXTENSIONS{$format} || ".$format";
         $filename =~ s/(\.[^.]+)?$/_$biblionumber$ext/;
+    } else {
+        # Ensure the file has the correct extension
+        my $ext = $PLUGIN_EXTENSIONS{$format} || ".$format";
+        $filename .= $ext unless $filename =~ /\Q$ext\E$/;
     }
 
     open my $fh, '>:encoding(UTF-8)', $filename
@@ -419,7 +416,7 @@ Conversion engine: C<xslt> (default) or C<plugin>. The xslt engine runs
 the marc2bibframe2 XSLT converter over all selected records in one pass and
 writes a single RDF/XML file. The plugin engine uses the plugin's own
 Bibframe module (Finnish BIBFRAME Implementation) and stores the result in
-the biblio_metadata table or in per-record files.
+per-record files.
 
 =item B<--biblionumber=N> / B<--biblionumbers=N,M,...>
 
@@ -458,8 +455,8 @@ RDF/XML conversion).
 =item B<--output=PATH>
 
 xslt engine: the single RDF/XML output file (default: bibframe.rdf).
-plugin engine: save to file(s) instead of the biblio_metadata table;
-a biblionumber suffix is appended when multiple records are selected.
+plugin engine: the output file (default: bibframe.EXT); a biblionumber
+suffix is appended when multiple records are selected.
 
 =item B<--xsl=PATH>
 
@@ -506,9 +503,8 @@ marc:collection of all selected records, producing one RDF/XML document.
 Requires xsltproc and XML::LibXML.
 
 =item * plugin - The plugin's Bibframe module produces RDF triples using
-the Finnish BIBFRAME Implementation mapping. Results are stored in the
-biblio_metadata table (format=turtle/json-ld/etc., schema='Bibframe') or
-in per-record output files.
+the Finnish BIBFRAME Implementation mapping. Results are written to
+per-record output files.
 
 =back
 
@@ -530,7 +526,7 @@ Export a range of records to structured JSON with verbose output:
 
   ./convert_marc_to_Bibframe.pl --range=100-200 --format=json --output=records.json --verbose
 
-Convert all biblios to JSON-LD and store in the database:
+Convert all biblios to JSON-LD files (plugin engine):
 
   ./convert_marc_to_Bibframe.pl --all --engine=plugin --format=json-ld --verbose
 

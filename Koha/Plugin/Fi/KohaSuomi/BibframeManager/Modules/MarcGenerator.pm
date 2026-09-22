@@ -18,12 +18,9 @@ Phase 10: Reconstructs MARC21 records from the storage layer.
 
 The canonical semantic (EAV) store keeps BIBFRAME property URIs, not original
 MARC subfields, so exact MARC reconstruction from the EAV is lossy. MarcGenerator
-therefore returns the authoritative saved MARC copy:
-
-  1. record_format_mappings.format_name='marc21' (serialized_data) - the
-     per-resource saved copy written by the semantic store.
-  2. Koha biblio_metadata (format='marcxml') - the Koha authoritative copy,
-     keyed by biblio_id.
+therefore returns the authoritative saved MARC copy from
+record_format_mappings.format_name='marc21' (serialized_data), the per-resource
+saved copy written by the semantic store.
 
 This gives the generator a pass-through reader of the stored MARC while the
 semantic store remains the canonical linked-data source of truth.
@@ -48,9 +45,8 @@ sub dbh {
     my $record = $gen->get_record(resource_id => $id);
     my $record = $gen->get_record(biblio_id   => $biblio_id);
 
-Resolves a resource to its authoritative MARC21 record. Looks up the saved
-MARC copy in record_format_mappings first, then falls back to Koha's
-biblio_metadata. Returns a MARC::Record object or undef.
+Resolves a resource to its authoritative MARC21 record: the saved MARC copy in
+record_format_mappings. Returns a MARC::Record object or undef.
 
 =cut
 
@@ -62,12 +58,8 @@ sub get_record {
 
     $biblio_id ||= $self->_biblio_id_for_resource($resource_id) if $resource_id;
 
-    # 1. Prefer the saved MARC copy in the hybrid store
+    # Return the saved MARC copy in the hybrid store
     my $record = $self->_from_format_mappings($resource_id, $biblio_id);
-    return $record if $record;
-
-    # 2. Fall back to Koha's authoritative biblio_metadata
-    $record = $self->_from_biblio_metadata($biblio_id);
     return $record if $record;
 
     return undef;
@@ -158,25 +150,6 @@ sub _from_format_mappings {
     return undef unless $rows && @$rows;
 
     return $self->_record_from_serialized($rows->[0]->{serialized_data});
-}
-
-# Reads Koha's authoritative MARC from biblio_metadata.
-sub _from_biblio_metadata {
-    my ($self, $biblio_id) = @_;
-
-    return undef unless $biblio_id;
-
-    my $sth = $self->dbh->prepare(
-        "SELECT metadata FROM biblio_metadata
-         WHERE biblionumber = ? AND format = 'marcxml'
-         ORDER BY id DESC LIMIT 1"
-    );
-    $sth->execute($biblio_id);
-    my $row = $sth->fetchrow_hashref();
-
-    return undef unless $row && $row->{metadata};
-
-    return $self->_record_from_serialized($row->{metadata});
 }
 
 # Coerces stored MARC (XML or ISO2709 binary) into a MARC::Record.

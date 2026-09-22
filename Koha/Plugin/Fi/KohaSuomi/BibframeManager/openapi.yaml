@@ -66,10 +66,6 @@
                 - bffi
                 - loc
               default: loc
-            save_to_db:
-              type: boolean
-              description: Save to database (biblio_metadata table)
-              default: false
     responses:
       200:
         description: Successful conversion
@@ -105,9 +101,6 @@
             biblionumber:
               type: integer
               description: Biblionumber of the converted record
-            metadata_id:
-              type: integer
-              description: Metadata ID if saved to database
             message:
               type: string
               description: Success message

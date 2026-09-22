@@ -2,39 +2,9 @@
 
 This directory contains scripts for converting MARC21 records to Bibframe (Bibframe Finland Implementation) format.
 
-## Scripts
+## Script
 
-### 1. simple_marc_to_Bibframe.pl
-
-A simple, educational script that demonstrates the complete workflow of converting a single MARC21 record to Bibframe.
-
-**Usage:**
-```bash
-./simple_marc_to_Bibframe.pl <biblionumber>
-```
-
-**Example:**
-```bash
-./simple_marc_to_Bibframe.pl 123
-```
-
-**What it does:**
-1. Fetches MARC21 record from biblio_metadata table for the specified biblionumber
-2. Converts it to Bibframe (Bibframe Finland Implementation) using RDF triples
-3. Saves the converted record to biblio_metadata table in three formats:
-   - Turtle (most readable for humans)
-   - JSON-LD (best for APIs)
-   - N-Triples (simple format for bulk processing)
-4. Exports the Turtle format to `/tmp/biblio_<biblionumber>_Bibframe.ttl`
-5. Displays a summary with sample triples
-
-**Output:**
-- Database records in `biblio_metadata` table with schema='Bibframe'
-- Export file in /tmp directory
-
----
-
-### 2. convert_marc_to_Bibframe.pl
+### convert_marc_to_Bibframe.pl
 
 A comprehensive script with many options for batch processing, two conversion
 engines, and different output formats.
@@ -49,8 +19,7 @@ engines, and different output formats.
   XSLT converter (bundled in `config/`) over all selected records in one pass
   and writes a single RDF/XML file.
 - `plugin` - Uses the plugin's own Bibframe module (Finnish BIBFRAME
-  Implementation) and stores the result in the `biblio_metadata` table or in
-  per-record files.
+  Implementation) and writes per-record files.
 
 **Options:**
 - `--engine=ENGINE` - Conversion engine: `xslt` (default) or `plugin`
@@ -62,7 +31,7 @@ engines, and different output formats.
 - `--all` - Process all biblios in the database
 - `--limit=N` / `--offset=N` - Only process up to N records, skipping the first N
 - `--format=FORMAT` - Plugin engine only: turtle (default), json-ld, ntriples, rdfxml, json
-- `--output=PATH` - xslt engine: the single RDF/XML output file. plugin engine: save to file(s) instead of the biblio_metadata table
+- `--output=PATH` - xslt engine: the single RDF/XML output file. plugin engine: the output file (default: `bibframe.EXT`); a biblionumber suffix is appended when multiple records are selected
 - `--xsl=PATH` - xslt engine only: path to `marc2bibframe2.xsl` (defaults to the copy bundled in `config/`)
 - `--baseuri=URI` - xslt engine only: URI stem used for minting entity URIs
 - `--idsource=URI` - xslt engine only: URI identifying the source of the record IDs
@@ -88,7 +57,7 @@ Convert a range of biblios with a custom URI stem:
 ./convert_marc_to_Bibframe.pl --range=100-200 --baseuri=http://mylibrary.org/ --verbose
 ```
 
-Convert all biblios to JSON-LD format and store in the database (plugin engine):
+Convert all biblios to JSON-LD files (plugin engine):
 ```bash
 ./convert_marc_to_Bibframe.pl --all --engine=plugin --format=json-ld --verbose
 ```
@@ -115,32 +84,6 @@ Export multiple biblios to files (plugin engine):
 | ntriples | .nt | N-Triples format | Bulk processing, simple parsing |
 | rdfxml | .rdf | RDF/XML format | Traditional RDF applications |
 | json | .json | Simple JSON array | Simple data interchange |
-
----
-
-## Database Storage
-
-When saving to the database (default behavior, no `--output` specified), the converted Bibframe records are stored in the `biblio_metadata` table with:
-
-- **biblionumber**: The biblionumber being described
-- **format**: The serialization format (turtle, json-ld, etc.)
-- **schema**: Always 'Bibframe' for these conversions
-- **metadata**: The serialized RDF triples
-- **timestamp**: Automatically updated on save
-
-**Benefits of using biblio_metadata table:**
-- Automatic CASCADE delete when biblio is deleted
-- Native Koha integration
-- Support for multiple formats simultaneously
-- Automatic timestamp tracking
-- No custom tables to maintain
-
-**Example query:**
-```sql
-SELECT * FROM biblio_metadata 
-WHERE biblionumber = 123 
-  AND schema = 'Bibframe';
-```
 
 ---
 
@@ -171,18 +114,16 @@ my $triples = $converter->convert_record_to_Bibframe(
 
 This produces an array of RDF triples (subject, predicate, object) following the Bibframe standard.
 
-### 3. Saving the Converted Record
+### 3. Writing the Converted Record
 
-The `Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database` module handles saving:
+The plugin engine writes the serialized result to a file (default `bibframe.ttl`,
+or `bibframe.<biblionumber>.ttl` when multiple records are selected). XSLT output
+is a single output file. The serialization is performed by
+`Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database`:
 
 ```perl
 my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
-my $id = $db->saveBibframeMetadata(
-    $biblionumber,
-    $triples,
-    format => 'turtle',
-    schema => 'Bibframe'
-);
+my $serialized = $db->serializeTriples($triples, 'turtle');
 ```
 
 ---
@@ -190,7 +131,7 @@ my $id = $db->saveBibframeMetadata(
 ## Requirements
 
 - Koha ILS installation
-- koha-plugin-rdf-triple plugin installed
+- Bibframe Manager plugin installed
 - Perl modules:
   - Modern::Perl
   - MARC::Record
@@ -222,8 +163,6 @@ my $id = $db->saveBibframeMetadata(
 
 ## See Also
 
-- [USAGE_EXAMPLE.pl](USAGE_EXAMPLE.pl) - Additional code examples
-- [Bibframe_IMPLEMENTATION.md](../../Bibframe_IMPLEMENTATION.md) - Bibframe specification
 - Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe - Conversion module
 - Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database - Database module
 

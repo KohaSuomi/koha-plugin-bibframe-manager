@@ -13,7 +13,6 @@ use MARC::File::USMARC;
 use MARC::File::XML;
 use MIME::Base64;
 use Try::Tiny;
-use JSON;
 
 =head1 NAME
 
@@ -24,57 +23,6 @@ Koha::Plugin::Fi::KohaSuomi::BibframeManager::Controllers::BibframeController
 Controller for Bibframe conversion API endpoints
 
 =head1 API METHODS
-
-=head2 add
-POST /api/v1/contrib/kohasuomi/bibframe
-
-Adds a new Bibframe metadata record to the database
-
-=cut
-
-sub add {
-    my $c = shift->openapi->valid_input or return;
-
-    return try {
-        # Get parameters from JSON body
-        my $body = $c->validation->output;
-        my $biblionumber = $body->{biblionumber};
-        my $triples = $body->{triples};
-        my $format = $body->{format} || 'turtle';
-        my $schema = $body->{schema} || 'Bibframe';
-
-        unless ($biblionumber && $triples) {
-            return $c->render(
-                status => 400,
-                openapi => { error => 'biblionumber and triples are required' }
-            );
-        }
-
-        my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
-        my $metadata_id = $db->saveBibframeMetadata(
-            $biblionumber,
-            $triples,
-            format => $format,
-            schema => $schema
-        );
-
-        return $c->render(
-            status => 201,
-            openapi => {
-                success => JSON::true,
-                metadata_id => $metadata_id,
-                message => 'Bibframe metadata record successfully added to database'
-            }
-        );
-
-    } catch {
-        warn "Error adding Bibframe metadata: $_";
-        return $c->render(
-            status => 500,
-            openapi => { error => "Internal server error: $_" }
-        );
-    };
-}
 
 =head2 convert
 
@@ -93,8 +41,7 @@ sub convert {
         my $method = $body->{method} || 'biblio';
         my $base_uri = $body->{base_uri} || 'http://urn.fi/URN:NBN:fi:bib:';
         my $format = $body->{format} || 'turtle';
-        my $save_to_db = $body->{save_to_db} || 0;
-        
+
         my $marc_record;
         my $biblionumber;
 
@@ -208,18 +155,6 @@ sub convert {
             # Parse RDF/XML into triples so the editor can be populated
             my $triples = $converter->rdf_to_triples($rdfxml);
 
-            # Save to database if requested
-            my $metadata_id = 0;
-            if ($save_to_db && $biblionumber) {
-                my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
-                $metadata_id = $db->saveBibframeMetadata(
-                    $biblionumber,
-                    $triples,
-                    format => $loc_format,
-                    schema => 'BIBFRAME'
-                );
-            }
-
             return $c->render(
                 status => 200,
                 openapi => {
@@ -229,7 +164,6 @@ sub convert {
                     standard => 'loc',
                     triple_count => scalar(@$triples),
                     biblionumber => $biblionumber,
-                    metadata_id => $metadata_id,
                     message => 'MARC21 record successfully converted to BIBFRAME via LoC XSLT'
                 }
             );
@@ -273,17 +207,6 @@ sub convert {
         my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
         my $formatted_output = $db->serializeTriples($triples, $format);
 
-        # Save to database if requested
-        my $metadata_id = 0;
-        if ($save_to_db && $biblionumber) {
-            $metadata_id = $db->saveBibframeMetadata(
-                $biblionumber,
-                $triples,
-                format => $format,
-                schema => 'Bibframe'
-            );
-        }
-
         # Return response
         return $c->render(
             status => 200,
@@ -294,7 +217,6 @@ sub convert {
                 standard => $standard,
                 triple_count => scalar(@$triples),
                 biblionumber => $biblionumber,
-                metadata_id => $metadata_id,
                 message => 'MARC21 record successfully converted to BFFI (4-level WEMI derived from LoC BIBFRAME)'
             }
         );
