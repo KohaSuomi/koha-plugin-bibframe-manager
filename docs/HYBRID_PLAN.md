@@ -1035,6 +1035,45 @@ BIBFRAME RDF ───→ RDF Parser ───┘    (dedup, extract,       reco
 
 ---
 
+## Phase 25: XSLT Conversion Result → Semantic Store
+
+The XSLT conversion pipeline (`cronjobs/convert_marc_to_bibframe.pl`) currently
+writes converted BIBFRAME to file only. This phase persists the converted result
+into the semantic store so the new tables (`record_resources`,
+`record_properties`, `record_links`, plus derived summaries) are populated.
+
+**Per-record conversion:** the xslt engine converts all selected records as one
+`marc:collection` in a single `xsltproc` run, so storage runs per record for a
+1:1 `biblio_id` mapping — `Bibframe::convert_record_with_xslt` (in-process
+`XML::LibXSLT`) → `Bibframe::rdf_to_triples` →
+`SemanticStore::store_bibframe_rdf($triples, biblio_id => $biblio, source_format => 'bibframe')`.
+
+**Idempotent re-runs:** `store_bibframe_rdf` gains a `replace` option that
+deletes the biblio's previously stored rows inside the storage transaction
+before re-inserting (properties/links cascade via `ON DELETE CASCADE`).
+Re-converting the same biblio never creates duplicate rows.
+
+**Triggers:**
+
+| Trigger | Where | Notes |
+|---------|-------|-------|
+| CLI     | `--store` flag on `convert_marc_to_bibframe.pl` | file output preserved; per-record file suffix when storing |
+| API     | `save_to_db: true` on `POST /bibframe/convert` | requires `method=biblio`; stores the LoC triples |
+| UI      | "Save to Database" button in the plugin tool (`tool.tt`) | implements the Pinia `saveToDatabase()` action (previously a dead flag) |
+
+**Canonical form stored:** the LoC 3-level triples produced by the XSLT.
+For `standard=bffi` the underlying `$loc_triples` are stored — Expression stays
+derived, never persisted (see [Where Do Expression Entities Live?](#where-do-expression-entities-live)).
+
+**Instance ↔ Work across records:** each record is stored atomically with its
+own Work + Instance pair, including the intra-record `hasInstance`/`instanceOf`
+`record_links` and the `record_instance_summary.work_resource_id`. Matching an
+Instance to an *already stored* Work across records (editions, translations) is
+**not** attempted at ingest time — that is the clustering engine's job
+(Phases 15–17, `work_match_candidates`).
+
+---
+
 ## Query Examples
 
 ### "Find all Works by author X" (fast — uses summary tables)
@@ -1145,6 +1184,7 @@ LIMIT 20;
 | 22 | Search API endpoint | `GET /bibframe/search` in `BibframeController.pm` + `openapi.yaml`. Query params: `q`, `model`, `limit`, `offset`, facet filters. Returns paginated results with biblio_id, work label, agents, manifestation date, relevance score. |
 | 23 | Search results UI | Vue search results component with free-text input, result cards, facet sidebar (language, subject, date range), "View BIBFRAME" deep-link to entity editor. |
 | 24 | Koha search bridge | `intranet_client_js` / `opac_client_js` hook injecting per-biblio "BIBFRAME" links into Koha's search results and detail pages. Deep-link param in `tool.tt` for auto-loading via `/bibframe/summary`. |
+| 25 | XSLT result storage | Persist XSLT-converted BIBFRAME into the semantic store: per-record `Bibframe::convert_record_with_xslt` → `rdf_to_triples` → `SemanticStore::store_bibframe_rdf` (adds `replace` for idempotent re-runs). Triggers: `convert_marc_to_bibframe.pl --store`, `POST /bibframe/convert save_to_db`, plugin tool "Save to Database". Cross-record Instance→Work matching stays with the clustering engine (Phases 15–17). |
 
 ---
 
