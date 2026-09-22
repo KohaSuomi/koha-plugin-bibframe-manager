@@ -12,7 +12,7 @@ export default {
     },
     computed: {
         entityTypes() {
-            return this.store.standard === 'loc'
+            return this.store.standard === 'bibframe2'
                 ? ['work', 'instance', 'item']
                 : ['work', 'expression', 'manifestation', 'item'];
         }

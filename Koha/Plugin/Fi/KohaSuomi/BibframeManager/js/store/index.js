@@ -10,7 +10,7 @@ export const useBibframeStore = defineStore('bibframe', {
         outputFormat: 'turtle',
         saveToDatabase: false,
         // Standard selection: 'bffi' (Work > Expression > Manifestation > Item)
-        // or 'loc' (LOC BIBFRAME 2.0: Work > Instance > Item)
+        // or 'bibframe2' (BIBFRAME 2.0: Work > Instance > Item)
         standard: 'bffi',
         entities: [],
         error: null,
@@ -30,19 +30,19 @@ export const useBibframeStore = defineStore('bibframe', {
     getters: {
         // Entity-level ladder for the currently selected standard
         entityLadder: (state) => {
-            return state.standard === 'loc'
+            return state.standard === 'bibframe2'
                 ? ['work', 'instance', 'item']
                 : ['work', 'expression', 'manifestation', 'item'];
         },
         
         getPropertySuggestions: (state) => (entityType) => {
-            const source = state.standard === 'loc' ? state.locPropertySuggestions : state.propertySuggestions;
+            const source = state.standard === 'bibframe2' ? state.locPropertySuggestions : state.propertySuggestions;
             return source[entityType] || [];
         },
         
         // Get only property suggestions (non-relationships)
         getPropertyOnly: (state) => (entityType) => {
-            const suggestions = state.standard === 'loc'
+            const suggestions = state.standard === 'bibframe2'
                 ? (state.locPropertySuggestions[entityType] || [])
                 : (state.propertySuggestions[entityType] || []);
             return suggestions.filter(s => s.type === 'property');
@@ -50,7 +50,7 @@ export const useBibframeStore = defineStore('bibframe', {
         
         // Get only relationship suggestions
         getRelationshipSuggestions: (state) => (entityType) => {
-            const suggestions = state.standard === 'loc'
+            const suggestions = state.standard === 'bibframe2'
                 ? (state.locPropertySuggestions[entityType] || [])
                 : (state.propertySuggestions[entityType] || []);
             return suggestions.filter(s => s.type === 'relationship');
@@ -64,14 +64,14 @@ export const useBibframeStore = defineStore('bibframe', {
 
         // Build a fixed ladder based on the selected standard:
         // BFFI: Work > Expression > Manifestation > Item
-        // LOC:  Work > Instance > Item
+        // BIBFRAME 2.0:  Work > Instance > Item
         // Entities are partitioned by type; each Work is a root carrying its
         // children, which carry their children, etc. down the ladder.
         // Children are spread evenly across the parents of the level directly
         // above (linear interpolation), so nothing is dropped and the nesting
         // stays balanced rather than clustering under the first parent.
         getEntityHierarchy: (state) => {
-            const ladder = state.standard === 'loc'
+            const ladder = state.standard === 'bibframe2'
                 ? ['work', 'instance', 'item']
                 : ['work', 'expression', 'manifestation', 'item'];
             const byType = {};
@@ -321,7 +321,7 @@ export const useBibframeStore = defineStore('bibframe', {
             
             // Generate triples from entities
             const triples = [];
-            const isLoc = this.standard === 'loc';
+            const isLoc = this.standard === 'bibframe2';
 
             this.entities.forEach(entity => {
                 const subjectUri = entity.uri || `${this.baseUri}${this.recordId}/${entity.type}`;

@@ -33,7 +33,7 @@ export default {
             <div class="row align-items-start">
                 <div class="col-md-7">
                     <h2><i class="fas fa-project-diagram"></i> Bibframe Record Builder</h2>
-                    <p class="text-muted">Create Bibframe records from scratch using BFFI (four-level RDA) or LOC BIBFRAME 2.0 (Work > Instance > Item)</p>
+                    <p class="text-muted">Create Bibframe records from scratch using BFFI (four-level RDA) or BIBFRAME 2.0 (Work > Instance > Item)</p>
                 </div>
                 <div class="col-md-5">
                     <SearchRecords />
@@ -72,7 +72,7 @@ export default {
                                     <label class="form-label">Standard</label>
                                     <select v-model="store.standard" class="form-select">
                                         <option value="bffi">BFFI — Work &gt; Expression &gt; Manifestation &gt; Item</option>
-                                        <option value="loc">LOC — Work &gt; Instance &gt; Item</option>
+                                        <option value="bibframe2">BIBFRAME 2.0 — Work &gt; Instance &gt; Item</option>
                                     </select>
                                 </div>
                                 <div class="col-md-3">
@@ -101,7 +101,7 @@ export default {
                         <div class="entity-type-btn" @click="store.addEntity('work')">
                             <i class="fas fa-book fa-2x text-primary"></i>
                             <h5>Work</h5>
-                            <small>{{ store.standard === 'loc' ? 'Abstract creation — Instances are added from the Work' : 'Abstract creation — Expressions are added from the Work' }}</small>
+                            <small>{{ store.standard === 'bibframe2' ? 'Abstract creation — Instances are added from the Work' : 'Abstract creation — Expressions are added from the Work' }}</small>
                         </div>
                     </div>
 

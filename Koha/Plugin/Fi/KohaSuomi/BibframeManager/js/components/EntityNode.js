@@ -2,7 +2,7 @@
 // Renders a single entity card and any nested child entities beneath it,
 // forming the fixed ladder for the selected standard:
 // BFFI: Work > Expression > Manifestation > Item
-// LOC:  Work > Instance > Item
+// BIBFRAME 2.0:  Work > Instance > Item
 import { useBibframeStore } from '../store/index.js';
 import { useEntityHelpers } from '../composables/utils.js';
 
@@ -46,13 +46,13 @@ export default {
             return this.entity.type.charAt(0).toUpperCase() + this.entity.type.slice(1);
         },
         childLabel() {
-            const labels = this.store.standard === 'loc'
+            const labels = this.store.standard === 'bibframe2'
                 ? { work: 'Instances', instance: 'Items', item: null }
                 : { work: 'Expressions', expression: 'Manifestations', manifestation: 'Items', item: null };
             return labels[this.entity.type];
         },
         childType() {
-            const types = this.store.standard === 'loc'
+            const types = this.store.standard === 'bibframe2'
                 ? { work: 'instance', instance: 'item', item: null }
                 : { work: 'expression', expression: 'manifestation', manifestation: 'item', item: null };
             return types[this.entity.type];

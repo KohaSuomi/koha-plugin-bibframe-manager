@@ -168,7 +168,7 @@ The plugin registers API routes under `/api/v1/contrib/kohasuomi`:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `POST /api/v1/contrib/kohasuomi/bibframe/convert` | Convert a MARC21 record (by biblionumber, base64 MARC file, or raw MARC/XML text) to Bibframe. Standard: `bffi` or `loc` (default). |
+| `POST /api/v1/contrib/kohasuomi/bibframe/convert` | Convert a MARC21 record (by biblionumber, base64 MARC file, or raw MARC/XML text) to Bibframe. Standard: `bffi` or `bibframe2` (default). |
 | `POST /api/v1/contrib/kohasuomi/bibframe/store` | Export a stored record from the semantic store as LoC 3-level or BFFI 4-level WEMI RDF, by `resource_id` or `biblio_id`. |
 | `GET /api/v1/contrib/kohasuomi/bibframe/summary` | Read the stored semantic summary for a biblio from the typed summary tables (work, instances, agents). |
 

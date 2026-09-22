@@ -61,11 +61,11 @@
               default: turtle
             standard:
               type: string
-              description: "Conversion standard: bffi (Finnish BFFI) or loc (LoC BIBFRAME 2.0 via XSLT)"
+              description: "Conversion standard: bffi (Finnish BFFI) or bibframe2 (BIBFRAME 2.0 via XSLT)"
               enum:
                 - bffi
-                - loc
-              default: loc
+                - bibframe2
+              default: bibframe2
     responses:
       200:
         description: Successful conversion
@@ -186,11 +186,11 @@
               default: json
             standard:
               type: string
-              description: "Export standard: loc (LoC 3-level, default) or bffi (BFFI 4-level WEMI)"
+              description: "Export standard: bibframe2 (BIBFRAME 2.0 3-level, default) or bffi (BFFI 4-level WEMI)"
               enum:
                 - bffi
-                - loc
-              default: loc
+                - bibframe2
+              default: bibframe2
     responses:
       200:
         description: Successful export
@@ -219,7 +219,7 @@
               description: Output format used
             standard:
               type: string
-              description: Output standard used (loc or bffi)
+              description: Output standard used (bibframe2 or bffi)
             triple_count:
               type: integer
               description: Number of triples generated

@@ -120,12 +120,12 @@ sub convert {
         }
 
         # Determine conversion standard
-        my $standard = $body->{standard} || 'loc';
+        my $standard = $body->{standard} || 'bibframe2';
 
         # Convert to Bibframe
         my $converter = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe->new();
 
-        if ($standard eq 'loc') {
+        if ($standard eq 'bibframe2') {
             # Use LoC XSLT-based conversion
             my $loc_format = $format eq 'json' ? 'json' : 'rdf-xml';
             my $xslt_path = $body->{xslt_path} || undef;
@@ -161,7 +161,7 @@ sub convert {
                     triples => $triples,
                     formatted => $formatted_output,
                     format => $loc_format,
-                    standard => 'loc',
+                    standard => 'bibframe2',
                     triple_count => scalar(@$triples),
                     biblionumber => $biblionumber,
                     message => 'MARC21 record successfully converted to BIBFRAME via LoC XSLT'
@@ -247,7 +247,7 @@ sub store_export {
         my $method = $body->{method} || 'biblio_id';
         my $base_uri = $body->{base_uri} || 'http://urn.fi/URN:NBN:fi:bib:';
         my $format = $body->{format} || 'json';
-        my $standard = $body->{standard} || 'loc';
+        my $standard = $body->{standard} || 'bibframe2';
 
         my %lookup;
         if ($method eq 'resource_id') {
@@ -272,7 +272,7 @@ sub store_export {
         my $formatted_output;
         my $message;
 
-        if ($standard eq 'loc') {
+        if ($standard eq 'bibframe2') {
             my $gen = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BibframeGenerator->new();
             $triples = $gen->generate_triples(%lookup);
             $formatted_output = $gen->generate(%lookup, format => $format);
