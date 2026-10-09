@@ -302,6 +302,26 @@
               description: Instance summary rows (record_instance_summary) plus uri
               items:
                 type: object
+                properties:
+                  publisher_name:
+                    type: string
+                  publication_place:
+                    type: string
+                  publication_date:
+                    type: string
+                  instance_type:
+                    type: string
+                  media_type:
+                    type: string
+                  carrier_type:
+                    type: string
+                  extent:
+                    type: string
+                  identifiers:
+                    type: array
+                    description: Standard numbers found on the Instance (ISBN, ISSN, control numbers, ...)
+                    items:
+                      type: object
             agents:
               type: array
               description: Agents (record_agent_summary) linked to the Work via creator/contributor relationships

@@ -98,6 +98,7 @@ agents:
   relationship_types:
     - creator
     - contributor
+    - agent
   fields:
     name:     "label"      # record_resources.label
     role:     "role"       # derived from relationship_type (creator -> aut)

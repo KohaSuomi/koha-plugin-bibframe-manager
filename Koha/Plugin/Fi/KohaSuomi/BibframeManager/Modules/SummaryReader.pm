@@ -3,6 +3,7 @@ package Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryReader;
 use strict;
 use warnings;
 use utf8;
+use JSON;
 use C4::Context;
 
 =head1 NAME
@@ -150,6 +151,10 @@ sub get_instances_for_biblio {
     );
     $sth->execute($biblio_id);
     while (my $row = $sth->fetchrow_hashref()) {
+        # MySQL returns a JSON column as a string; expose it as a real array.
+        if (defined $row->{identifiers} && length $row->{identifiers}) {
+            $row->{identifiers} = eval { JSON->new->decode($row->{identifiers}) } || [];
+        }
         push @instances, $row;
     }
     return \@instances;
@@ -185,8 +190,8 @@ sub get_instance {
     my $agents = $reader->get_agents_for_work($work_resource_id);
 
 Returns agent names for a Work, sourced from record_agent_summary joined via
-record_links (creator/contributor relationships). Each agent includes a role
-(creator -> 'aut', else 'ctb') and its agent type.
+record_links (creator/contributor/agent relationships). Each agent includes a
+role (creator -> 'aut', else 'ctb') and its agent type.
 
 =cut
 
@@ -202,7 +207,7 @@ sub get_agents_for_work {
          FROM record_links l
          JOIN record_agent_summary a ON a.resource_id = l.target_resource_id
          WHERE l.source_resource_id = ?
-           AND l.relationship_type IN ('creator', 'contributor')
+           AND l.relationship_type IN ('creator', 'contributor', 'agent')
          ORDER BY l.sequence"
     );
     $sth->execute($work_resource_id);

@@ -50,10 +50,14 @@ CREATE TABLE IF NOT EXISTS record_instance_summary (
     publication_date    VARCHAR(128),
     publication_date_sort DATE,
 
-    instance_type       VARCHAR(128),
+instance_type       VARCHAR(128),
     media_type          VARCHAR(128),
     carrier_type        VARCHAR(128),
     extent              VARCHAR(512),
+
+    -- Standard numbers (ISBN, ISSN, control numbers, ...), each entry holding
+    -- its value plus the assigner/qualifier recorded alongside it.
+    identifiers         JSON,
 
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

@@ -265,7 +265,7 @@ sub store_bibframe_rdf {
     );
 
     my (%types_by_subject, %labels, %label_priorities, %sequence);
-    my (%agent_of_subject, %pending_role_by_subject, %agent_role);
+    my (%agent_of_subject, %pending_role_by_subject, %agent_role, %marc_key_by_subject);
     my $remember_agent_role = sub {
         my ($subject, $agent, $role) = @_;
         if (my $existing = $agent_role{$subject}{$agent}) {
@@ -323,6 +323,9 @@ sub store_bibframe_rdf {
             }
         }
         next if $object_type ne 'literal' || !defined $object || ref($object);
+        # bflc:marcKey carries the originating MARC field, used to recover the
+        # agent role (main vs added entry) when bf:role is only a label.
+        $marc_key_by_subject{$triple->{subject}} = $object if $localname eq 'marcKey';
         my $priority;
         if ($localname eq 'mainTitle') {
             # Beats rdfs:label: flattened anonymous nodes (bf:Note etc.) can
@@ -379,9 +382,14 @@ sub store_bibframe_rdf {
         next unless defined $localname;
 
         my $relationship_type = $relationship_map{$localname};
-        if ($localname eq 'agent' && $agent_role{$subject}{$object}) {
-            $relationship_type = $self->_role_relationship_type($agent_role{$subject}{$object})
-                || $relationship_type;
+        if ($localname eq 'agent') {
+            if ($agent_role{$subject}{$object}) {
+                $relationship_type = $self->_role_relationship_type($agent_role{$subject}{$object})
+                    || $relationship_type;
+            } else {
+                $relationship_type = $self->_marc_key_relationship_type($marc_key_by_subject{$object})
+                    || $relationship_type;
+            }
         }
         if ($object_type eq 'uri' && $relationship_type && exists $resources_to_insert{$object}) {
             push @links_to_insert, {
@@ -407,6 +415,23 @@ sub store_bibframe_rdf {
             value_lang => $triple->{lang},
             value_datatype => $triple->{datatype},
             sequence => $sequence,
+        };
+    }
+
+    # Persist each subject's identifiers as one JSON property. The flat
+    # property stream cannot express the pairing (one shared bf:assigner
+    # serving several bf:Identifier values is de-duplicated away by
+    # _execute_bibframe_storage), so the grouping is captured here instead.
+    my %identifiers_by_subject = %{ $self->_identifiers_from_triples($triples) };
+    for my $subject (sort keys %identifiers_by_subject) {
+        next unless exists $resources_to_insert{$subject};
+        push @properties_to_insert, {
+            resource_uri => $subject,
+            property_uri => $self->_expand_predicate_uri('bibframe-manager:identifiers'),
+            property_key => 'identifiers',
+            value_type   => 'literal',
+            value_text   => JSON->new->canonical->encode($identifiers_by_subject{$subject}),
+            sequence     => $sequence{$subject}++,
         };
     }
 
@@ -462,6 +487,71 @@ sub _role_relationship_type {
     return 'creator' if $code =~ /^(?:aut|cre|author|creator)$/;
     return 'contributor' if $code =~ /^(?:ctb|contributor|contribution)$/;
     return undef;
+}
+
+sub _marc_key_relationship_type {
+    my ($self, $marc_key) = @_;
+
+    return undef unless defined $marc_key && length $marc_key;
+    my ($tag) = $marc_key =~ /^\s*(\d{3})/;
+    return undef unless defined $tag;
+    return 'creator'     if $tag eq '100' || $tag eq '110' || $tag eq '111';
+    return 'contributor' if $tag eq '700' || $tag eq '710' || $tag eq '711';
+    return undef;
+}
+
+=head2 _identifiers_from_triples
+
+Groups the standard numbers of every subject in the triple stream. A
+C<rdf:value> literal starts a new identifier and the C<assigner>, C<source>
+and C<qualifier> properties that follow it belong to it, the same adjacency
+rule used for agent roles. Returns a hashref of subject => arrayref of
+C<< { value, assigner?, qualifier?, source? } >>.
+
+=cut
+
+sub _identifiers_from_triples {
+    my ($self, $triples) = @_;
+
+    my %identifiers;
+    my %current;
+
+    for my $triple (@{ $triples || [] }) {
+        my $subject = $triple->{subject};
+        next unless defined $subject && !ref $subject;
+
+        my $predicate = $triple->{predicate} || '';
+        my ($localname) = $predicate =~ m{(?:^|:|/|#)([^/:]+)$};
+        next unless defined $localname;
+
+        my $object = $triple->{object};
+        next unless defined $object && !ref $object;
+
+        my $object_type = $triple->{object_type} || 'literal';
+
+        # Any other property ends the current identifier, so a qualifier or
+        # assigner can never be attributed to an unrelated value.
+        if ($localname ne 'value'
+            && $localname ne 'assigner'
+            && $localname ne 'source'
+            && $localname ne 'qualifier') {
+            delete $current{$subject};
+            next;
+        }
+
+        if ($localname eq 'value') {
+            next unless $object_type eq 'literal' && length $object;
+            push @{ $identifiers{$subject} }, { value => $object };
+            $current{$subject} = $identifiers{$subject}[-1];
+            next;
+        }
+
+        my $identifier = $current{$subject};
+        next unless $identifier && !exists $identifier->{$localname};
+        $identifier->{$localname} = $object;
+    }
+
+    return \%identifiers;
 }
 
 sub _is_rdf_type {

@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use utf8;
 use Try::Tiny;
+use JSON;
 use C4::Context;
 
 =head1 NAME
@@ -248,8 +249,8 @@ sub _rebuild_instance_summary {
         "INSERT INTO record_instance_summary
              (resource_id, work_resource_id, biblio_id,
               publisher_name, publication_place, publication_date, publication_date_sort,
-              instance_type, media_type, carrier_type, extent)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+              instance_type, media_type, carrier_type, extent, identifiers)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
 
     my $count = 0;
@@ -258,28 +259,160 @@ sub _rebuild_instance_summary {
 
         my $props = $self->_properties_for($rid);
 
-        my $date = $props->{publicationDate}->[0];
+        my $date = $self->_first_value($props, 'publicationDate', 'date',
+            'copyrightDate', 'simpleDate');
         my $date_sort = $self->_parse_date_for_sort($date);
 
         my $work_resource_id = $self->_derive_work_resource($rid);
+
+        my $identifiers = $self->_identifiers_for($rid);
 
         $insert->execute(
             $rid,
             $work_resource_id,
             $inst->{biblio_id},
-            $props->{publisherName}->[0],
-            $props->{publicationPlace}->[0],
+            $self->_first_value($props, 'publisherName', 'simpleAgent'),
+            $self->_first_value($props, 'publicationPlace', 'simplePlace', 'place'),
             $date,
             $date_sort,
-            $props->{instanceType}->[0],
-            $props->{mediaType}->[0],
-            $props->{carrierType}->[0],
-            $props->{extent}->[0],
+            $self->_vocabulary_term(
+                $self->_first_value($props, 'instanceType', 'issuance')
+            ),
+            $self->_vocabulary_term(
+                $self->_first_value($props, 'mediaType', 'media')
+            ),
+            $self->_vocabulary_term(
+                $self->_first_value($props, 'carrierType', 'carrier')
+            ),
+            $self->_extent_for($props),
+            (@$identifiers ? JSON->new->canonical->encode($identifiers) : undef),
         );
         $count++;
     }
 
     return $count;
+}
+
+# Returns the first defined value among the given property keys. The stored
+# vocabulary depends on the conversion engine: the plugin's own BFFI converter
+# writes publisherName/publicationPlace/publicationDate, while marc2bibframe2
+# writes the LoC forms simpleAgent/simplePlace/date.
+sub _first_value {
+    my ($self, $props, @keys) = @_;
+
+    for my $key (@keys) {
+        for my $value (@{ $props->{$key} || [] }) {
+            return $value if defined $value && length $value;
+        }
+    }
+    return undef;
+}
+
+# Reduces a controlled-vocabulary URI to its term, so '…/mediaTypes/n' is
+# stored as 'n'.
+sub _vocabulary_term {
+    my ($self, $uri) = @_;
+
+    return undef unless defined $uri;
+    return $uri unless $uri =~ m{^(?:https?|urn):\S*/([^/]+)$};
+    return $1;
+}
+
+# marc2bibframe2 flattens bf:Extent into a plain rdfs:label, which is also used
+# for other annotations. Prefer an explicit extent property, then the first
+# label that looks like an extent ("328 sivua", "22 cm").
+sub _extent_for {
+    my ($self, $props) = @_;
+
+    for my $value (@{ $props->{extent} || [] }) {
+        return $value if defined $value && length $value;
+    }
+    for my $value (@{ $props->{label} || [] }) {
+        next unless defined $value;
+        return $value if $value =~ /\d+\s*(?:siv|p\.|s\.|cm|mm|käytt)/i;
+    }
+    return undef;
+}
+
+# Collects the standard numbers of an Instance. SemanticStore persists the
+# value/assigner/qualifier grouping as a JSON property, because the flat
+# property stream de-duplicates an assigner shared by several identifiers.
+# The stream walk below is only a fallback for rows stored before that.
+sub _identifiers_for {
+    my ($self, $resource_id) = @_;
+
+    my $stored = $self->_properties_for($resource_id)->{identifiers}[0];
+    if (defined $stored && length $stored) {
+        my $decoded = eval { JSON->new->decode($stored) };
+        return [] unless ref $decoded eq 'ARRAY';
+        return $self->_shape_identifiers($decoded);
+    }
+
+    my @identifiers;
+    my $current;
+
+    for my $property (@{ $self->_property_sequence_for($resource_id) }) {
+        my ($key, $value) = @$property;
+        next unless defined $value && length $value;
+
+        if ($key eq 'value') {
+            $current = { value => $value };
+            push @identifiers, $current;
+        } elsif ($current && $key =~ /^(?:assigner|source|qualifier)$/) {
+            next if exists $current->{$key};
+            $current->{$key} = $value;
+        }
+    }
+
+    return $self->_shape_identifiers(\@identifiers);
+}
+
+# Adds the summary-level type and reduces assigner/source URIs to their term.
+sub _shape_identifiers {
+    my ($self, $identifiers) = @_;
+
+    my @shaped;
+    for my $identifier (@$identifiers) {
+        my %out = (value => $identifier->{value});
+        $out{type} = $self->_identifier_type($identifier->{value});
+        $out{qualifier} = $identifier->{qualifier} if defined $identifier->{qualifier};
+        for my $key (qw(assigner source)) {
+            next unless defined $identifier->{$key};
+            $out{$key} = $self->_vocabulary_term($identifier->{$key});
+        }
+        push @shaped, \%out;
+    }
+    return \@shaped;
+}
+
+sub _identifier_type {
+    my ($self, $value) = @_;
+
+    return 'isbn' if $value =~ /^97[89]\d{10}$/ || $value =~ /^\d{9}[\dXx]$/;
+    return 'issn' if $value =~ /^\d{4}-?[\dXx]{4}$/;
+    return 'identifier';
+}
+
+# Returns an ordered [ property_key, value_text ] list, preserving the order
+# the properties were stored in. Identifier qualifiers and assigners are only
+# associated correctly with their value when the original order is kept.
+sub _property_sequence_for {
+    my ($self, $resource_id) = @_;
+
+    my $sth = $self->dbh->prepare(
+        "SELECT property_key, value_text
+         FROM record_properties
+         WHERE resource_id = ?
+         ORDER BY sequence, id"
+    );
+    $sth->execute($resource_id);
+
+    my @sequence;
+    while (my $row = $sth->fetchrow_hashref()) {
+        next unless defined $row->{value_text};
+        push @sequence, [ $row->{property_key}, $row->{value_text} ];
+    }
+    return \@sequence;
 }
 
 sub _rebuild_agent_summary {
@@ -407,7 +540,7 @@ sub _count_linked {
         $counts{$row->{relationship_type}} = $row->{c};
     }
 
-    my $contributor = ($counts{creator} || 0) + ($counts{contributor} || 0);
+    my $contributor = ($counts{creator} || 0) + ($counts{contributor} || 0) + ($counts{agent} || 0);
     my $subject = $counts{subject} || 0;
     my $instance = ($counts{hasInstance} || 0) + ($counts{hasExpression} || 0);
 
@@ -443,7 +576,7 @@ sub _find_original_expression {
     return $row ? ($row->[0]) : ();
 }
 
-# Counts Works contributed to by an agent (creator/contributor links pointing at it)
+# Counts Works contributed to by an agent (creator/contributor/agent links pointing at it)
 sub _count_agent_works {
     my ($self, $agent_resource_id) = @_;
 
@@ -451,7 +584,7 @@ sub _count_agent_works {
         "SELECT COUNT(*) AS c
          FROM record_links
          WHERE target_resource_id = ?
-           AND relationship_type IN ('creator','contributor')"
+           AND relationship_type IN ('creator','contributor','agent')"
     );
     $sth->execute($agent_resource_id);
     my $row = $sth->fetchrow_arrayref();
