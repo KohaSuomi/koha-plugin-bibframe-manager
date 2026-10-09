@@ -1,0 +1,91 @@
+# Report Services API Tests
+# Use these with VSCode REST Client plugin
+
+# OAuth2 token from login:
+@token = {{login.response.body.access_token}}
+
+###
+# @name login
+POST {{baseUrl}}/oauth/token HTTP/1.1
+Accept: application/json
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id={{clientId}}&client_secret={{clientSecret}}
+
+### BIBFRAME: export stored record as LoC 3-level BIBFRAME 2.0
+# @name bibframe_store_bibframe2
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/store HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "biblio_id",
+  "biblio_id": 2,
+  "standard": "bibframe2",
+  "format": "json"
+}
+
+### BIBFRAME: export stored record as BFFI 4-level WEMI
+# @name bibframe_store_bffi
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/store HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "biblio_id",
+  "biblio_id": 2,
+  "standard": "bffi",
+  "format": "json",
+  "base_uri": "http://urn.fi/URN:NBN:fi:bib:"
+}
+
+### BIBFRAME: export stored record as RDF/XML
+# @name bibframe_store_rdfxml
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/store HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "biblio_id",
+  "biblio_id": 2,
+  "standard": "bibframe2",
+  "format": "rdf-xml"
+}
+
+### BIBFRAME: export a stored resource by resource_id
+# @name bibframe_store_resource
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/store HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "resource_id",
+  "resource_id": 1,
+  "standard": "bibframe2",
+  "format": "turtle"
+}
+
+### BIBFRAME: read stored summary (work / instances / agents)
+# @name bibframe_summary
+GET {{baseUrl}}/contrib/kohasuomi/bibframe/summary?biblio_id=2 HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### BIBFRAME: convert a MARC record (biblio) and store it
+# @name bibframe_convert
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/convert HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "biblio",
+  "biblionumber": 2,
+  "standard": "bibframe2",
+  "format": "json",
+  "save_to_db": true
+}
