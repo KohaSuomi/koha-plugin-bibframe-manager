@@ -14,7 +14,7 @@ use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe;
 
 ## Here we set our plugin version
-our $VERSION = "1.0.0";
+our $VERSION = "2.0.0";
 
 ## Here is our metadata, some keys are required, some are optional
 our $metadata = {
@@ -75,6 +75,60 @@ sub api_namespace {
     return 'kohasuomi';
 }
 
+## Executes one SQL file statement by statement. The database connection
+## does not accept multi-statement queries, so the file cannot be passed
+## to $dbh->do() in one piece.
+sub _run_sql_file {
+    my ( $self, $dbh, $sql_path ) = @_;
+
+    my $sql_content = eval { read_file($sql_path) };
+    if ($@) {
+        warn "Failed to read SQL file $sql_path: $@";
+        return 0;
+    }
+
+    # Strip -- comments (they may contain semicolons), then split on ;
+    $sql_content =~ s/--[^\n]*//g;
+    for my $statement ( split /;/, $sql_content ) {
+        $statement =~ s/^\s+//;
+        $statement =~ s/\s+$//;
+        next unless length $statement;
+        $dbh->do($statement) or do {
+            warn "Failed to execute SQL from $sql_path: " . $dbh->errstr;
+            return 0;
+        };
+    }
+
+    return 1;
+}
+
+## Adds columns introduced after the initial table DDL. CREATE TABLE
+## IF NOT EXISTS cannot add columns to tables that already exist, so
+## upgrades of installed schemas need explicit ALTER statements.
+sub _ensure_columns {
+    my ( $self, $dbh ) = @_;
+
+    my @columns = (
+        [ 'record_links', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' ],
+    );
+
+    for my $c (@columns) {
+        my ( $table, $column, $ddl ) = @$c;
+        my ($exists) = $dbh->selectrow_array(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            undef, $table, $column
+        );
+        next if $exists;
+        $dbh->do("ALTER TABLE $table ADD COLUMN $column $ddl") or do {
+            warn "Failed to add $table.$column: " . $dbh->errstr;
+            return 0;
+        };
+    }
+
+    return 1;
+}
+
 ## This is the 'install' method. Any database tables or other setup that should
 ## be done when the plugin if first installed should be executed in this method.
 ## The installation method should always return true if the installation succeeded
@@ -93,17 +147,9 @@ sub install() {
 
     my $dbh = C4::Context->dbh;
     for my $sql_file (@sql_files) {
-        my $sql_path = "$sql_dir/$sql_file";
-        my $sql_content = eval { read_file($sql_path) };
-        if ($@) {
-            warn "Failed to read SQL file $sql_path: $@";
-            return 0;
-        }
-        $dbh->do($sql_content) or do {
-            warn "Failed to execute SQL from $sql_file: " . $dbh->errstr;
-            return 0;
-        };
+        $self->_run_sql_file( $dbh, "$sql_dir/$sql_file" ) or return 0;
     }
+    $self->_ensure_columns($dbh) or return 0;
 
     return 1;
 }
@@ -124,17 +170,9 @@ sub upgrade {
 
     my $dbh = C4::Context->dbh;
     for my $sql_file (@sql_files) {
-        my $sql_path = "$sql_dir/$sql_file";
-        my $sql_content = eval { read_file($sql_path) };
-        if ($@) {
-            warn "Failed to read SQL file $sql_path: $@";
-            return 0;
-        }
-        $dbh->do($sql_content) or do {
-            warn "Failed to execute SQL from $sql_file: " . $dbh->errstr;
-            return 0;
-        };
+        $self->_run_sql_file( $dbh, "$sql_dir/$sql_file" ) or return 0;
     }
+    $self->_ensure_columns($dbh) or return 0;
 
     return 1;
 }
@@ -153,7 +191,7 @@ sub uninstall() {
         record_component_parts
         work_match_candidates
         record_agent_summary
-        record_manif_summary
+        record_instance_summary
         record_work_summary
         record_properties
         record_links

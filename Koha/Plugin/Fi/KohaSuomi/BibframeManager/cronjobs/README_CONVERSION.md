@@ -36,6 +36,7 @@ engines, and different output formats.
 - `--baseuri=URI` - xslt engine only: URI stem used for minting entity URIs
 - `--idsource=URI` - xslt engine only: URI identifying the source of the record IDs
 - `--keep-marcxml=FILE` - xslt engine only: also save the generated MARCXML collection
+- `--store` - xslt engine only: replace and store each converted LoC BIBFRAME graph in the semantic store
 - `--dry-run` - Don't save/write anything
 - `--verbose` - Show detailed progress
 - `--help` - Show help message
@@ -56,6 +57,16 @@ Convert a range of biblios with a custom URI stem:
 ```bash
 ./convert_marc_to_Bibframe.pl --range=100-200 --baseuri=http://mylibrary.org/ --verbose
 ```
+
+Convert and store biblios transactionally in the semantic store:
+```bash
+./convert_marc_to_Bibframe.pl --biblionumber=123,124 --store --verbose
+```
+
+With `--store`, the XSLT engine writes one output file per record when multiple
+records are selected, uses biblionumber-scoped resource URIs, and replaces the
+previous graph for each biblio. The stored representation is canonical LoC
+3-level BIBFRAME; BFFI 4-level WEMI is derived on export.
 
 Convert all biblios to JSON-LD files (plugin engine):
 ```bash

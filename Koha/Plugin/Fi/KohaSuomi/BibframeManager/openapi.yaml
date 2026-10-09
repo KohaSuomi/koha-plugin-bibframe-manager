@@ -66,6 +66,10 @@
                 - bffi
                 - bibframe2
               default: bibframe2
+            save_to_db:
+              type: boolean
+              description: Store the canonical LoC BIBFRAME conversion in the semantic store (method=biblio only)
+              default: false
     responses:
       200:
         description: Successful conversion
@@ -101,6 +105,12 @@
             biblionumber:
               type: integer
               description: Biblionumber of the converted record
+            stored:
+              type: boolean
+              description: Whether the conversion was stored in the semantic store
+            storage:
+              type: object
+              description: Storage counts and graph identifiers
             message:
               type: string
               description: Success message

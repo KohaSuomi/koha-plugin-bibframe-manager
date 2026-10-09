@@ -18,11 +18,16 @@ export default {
                 setTimeout(() => store.clearSuccess(), 2000);
             }
         };
+
+        const handleSave = async () => {
+            await store.saveToDatabase();
+        };
         
         return {
             store,
             handleDownload,
-            handleCopy
+            handleCopy,
+            handleSave
         };
     },
     template: `
@@ -34,6 +39,15 @@ export default {
                 </button>
                 <button @click="handleDownload" class="btn btn-sm btn-outline-primary">
                     <i class="fas fa-download"></i> Download
+                </button>
+                <button
+                    v-if="String(store.recordId || '').match(/^\\d+$/)"
+                    @click="handleSave"
+                    :disabled="store.isSaving"
+                    class="btn btn-sm btn-success"
+                >
+                    <i class="fas" :class="store.isSaving ? 'fa-spinner fa-spin' : 'fa-save'"></i>
+                    {{ store.isSaving ? 'Saving...' : 'Save to Database' }}
                 </button>
             </div>
             <div class="result-box">{{ store.generatedOutput }}</div>

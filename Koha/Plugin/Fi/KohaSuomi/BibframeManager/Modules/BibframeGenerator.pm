@@ -137,13 +137,29 @@ sub _load_graph_resource_ids {
     my $dbh = $self->dbh;
     my @ids;
 
-    if ($biblio_id) {
-        # All resources belonging to the biblio graph
+    if (defined $biblio_id) {
         my $sth = $dbh->prepare(
-            'SELECT id FROM record_resources WHERE biblio_id = ?'
+            'SELECT rgr.resource_id
+             FROM record_graphs rg
+             JOIN record_graph_resources rgr ON rgr.graph_id = rg.id
+             WHERE rg.biblio_id = ?'
         );
         $sth->execute($biblio_id);
-        while (my $row = $sth->fetchrow_hashref()) { push @ids, $row->{id}; }
+        while (my $row = $sth->fetchrow_hashref()) {
+            push @ids, $row->{resource_id};
+        }
+        $sth->finish;
+
+        unless (@ids) {
+            my $legacy_sth = $dbh->prepare(
+                'SELECT id FROM record_resources WHERE biblio_id = ?'
+            );
+            $legacy_sth->execute($biblio_id);
+            while (my $row = $legacy_sth->fetchrow_hashref()) {
+                push @ids, $row->{id};
+            }
+            $legacy_sth->finish;
+        }
     } elsif ($resource_id) {
         # The resource plus everything it is linked to (transitively, one hop)
         my %seen = ($resource_id => 1);
@@ -190,10 +206,13 @@ sub _load_properties {
     my $placeholders = join ',', ('?') x @$graph_ids;
 
     my $sth = $self->dbh->prepare(
-        "SELECT resource_id, property_uri, property_key, value_type,
-                value_text, value_lang, value_resource_id
-         FROM record_properties WHERE resource_id IN ($placeholders)
-         ORDER BY resource_id, sequence"
+        "SELECT p.resource_id, p.property_uri, p.property_key, p.value_type,
+                p.value_text, p.value_lang, p.value_datatype,
+                p.value_resource_id, vr.uri AS value_resource_uri
+         FROM record_properties p
+         LEFT JOIN record_resources vr ON vr.id = p.value_resource_id
+         WHERE p.resource_id IN ($placeholders)
+         ORDER BY p.resource_id, p.sequence"
     );
     $sth->execute(@$graph_ids);
 
@@ -254,15 +273,20 @@ sub _emit_resource_triples {
 
     # Properties (predicates use the stored LoC property URI)
     for my $prop (@$props) {
-        next unless defined $prop->{value_text} && length $prop->{value_text};
+        my $is_resource = ($prop->{value_type} || '') eq 'resource'
+            || defined $prop->{value_resource_id};
+        my $object = $prop->{value_resource_uri};
+        $object = $prop->{value_text} unless defined $object && length $object;
+        next unless defined $object && length $object;
 
         my $pred = $prop->{property_uri} || $prop->{property_key};
         push @$triples, {
             subject     => $res->{uri},
             predicate   => $pred,
-            object      => $prop->{value_text},
-            object_type => 'literal',
+            object      => $object,
+            object_type => $is_resource ? 'uri' : 'literal',
             ($prop->{value_lang} ? (lang => $prop->{value_lang}) : ()),
+            ($prop->{value_datatype} ? (datatype => $prop->{value_datatype}) : ()),
         };
     }
 }

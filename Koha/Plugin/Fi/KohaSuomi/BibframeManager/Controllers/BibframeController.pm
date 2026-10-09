@@ -7,6 +7,7 @@ use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BibframeGenerator;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIGenerator;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryReader;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SemanticStore;
 use Koha::Biblios;
 use MARC::Record;
 use MARC::File::USMARC;
@@ -41,6 +42,14 @@ sub convert {
         my $method = $body->{method} || 'biblio';
         my $base_uri = $body->{base_uri} || 'http://urn.fi/URN:NBN:fi:bib:';
         my $format = $body->{format} || 'turtle';
+        my $save_to_db = $body->{save_to_db} ? 1 : 0;
+
+        if ($save_to_db && $method ne 'biblio') {
+            return $c->render(
+                status => 400,
+                openapi => { error => 'save_to_db requires method=biblio' }
+            );
+        }
 
         my $marc_record;
         my $biblionumber;
@@ -129,9 +138,12 @@ sub convert {
             # Use LoC XSLT-based conversion
             my $loc_format = $format eq 'json' ? 'json' : 'rdf-xml';
             my $xslt_path = $body->{xslt_path} || undef;
+            my $record_base_uri = $save_to_db
+                ? $c->_record_base_uri($base_uri, $biblionumber)
+                : $base_uri;
 
             my %xslt_opts = (
-                base_uri => $base_uri,
+                base_uri => $record_base_uri,
             );
             $xslt_opts{xslt_path} = $xslt_path if $xslt_path;
 
@@ -154,6 +166,16 @@ sub convert {
 
             # Parse RDF/XML into triples so the editor can be populated
             my $triples = $converter->rdf_to_triples($rdfxml);
+            my $storage;
+            if ($save_to_db) {
+                $storage = $c->_store_bibframe_conversion(
+                    $rdfxml,
+                    $triples,
+                    $biblionumber,
+                    $marc_record,
+                    $record_base_uri,
+                );
+            }
 
             return $c->render(
                 status => 200,
@@ -164,7 +186,11 @@ sub convert {
                     standard => 'bibframe2',
                     triple_count => scalar(@$triples),
                     biblionumber => $biblionumber,
-                    message => 'MARC21 record successfully converted to BIBFRAME via LoC XSLT'
+                    stored => $save_to_db,
+                    storage => $storage,
+                    message => $save_to_db
+                        ? 'MARC21 record successfully converted to BIBFRAME and stored'
+                        : 'MARC21 record successfully converted to BIBFRAME via LoC XSLT'
                 }
             );
         }
@@ -172,7 +198,10 @@ sub convert {
         # Convert to BFFI (4-level WEMI) by first running the LoC XSLT conversion
         # and then deriving the 4-level structure from the LoC 3-level output.
         my $xslt_path = $body->{xslt_path} || undef;
-        my %xslt_opts = ( base_uri => $base_uri );
+        my $record_base_uri = $save_to_db
+            ? $c->_record_base_uri($base_uri, $biblionumber)
+            : $base_uri;
+        my %xslt_opts = ( base_uri => $record_base_uri );
         $xslt_opts{xslt_path} = $xslt_path if $xslt_path;
 
         my $rdfxml = $converter->convert_record_with_xslt($marc_record, %xslt_opts);
@@ -187,8 +216,10 @@ sub convert {
         my $loc_triples = $converter->rdf_to_triples($rdfxml);
 
         # Derive BFFI 4-level WEMI from the LoC 3-level triples
-        my $full_base_uri = $base_uri;
-        $full_base_uri .= $biblionumber if $biblionumber;
+        my $full_base_uri = $save_to_db ? $record_base_uri : $base_uri;
+        if (!$save_to_db && $biblionumber) {
+            $full_base_uri .= $biblionumber;
+        }
         $full_base_uri =~ s{/?$}{/};
 
         my $triples = $converter->derive_wemi_from_loc(
@@ -200,6 +231,17 @@ sub convert {
             return $c->render(
                 status => 500,
                 openapi => { error => 'WEMI derivation produced no triples' }
+            );
+        }
+
+        my $storage;
+        if ($save_to_db) {
+            $storage = $c->_store_bibframe_conversion(
+                $rdfxml,
+                $loc_triples,
+                $biblionumber,
+                $marc_record,
+                $record_base_uri,
             );
         }
 
@@ -217,7 +259,11 @@ sub convert {
                 standard => $standard,
                 triple_count => scalar(@$triples),
                 biblionumber => $biblionumber,
-                message => 'MARC21 record successfully converted to BFFI (4-level WEMI derived from LoC BIBFRAME)'
+                stored => $save_to_db,
+                storage => $storage,
+                message => $save_to_db
+                    ? 'MARC21 record successfully converted to BFFI and stored as LoC BIBFRAME'
+                    : 'MARC21 record successfully converted to BFFI (4-level WEMI derived from LoC BIBFRAME)'
             }
         );
 
@@ -228,6 +274,30 @@ sub convert {
             openapi => { error => "Internal server error: $_" }
         );
     };
+}
+
+sub _record_base_uri {
+    my ($self, $base_uri, $biblionumber) = @_;
+
+    return $base_uri unless defined $biblionumber;
+    $base_uri .= $biblionumber;
+    $base_uri .= '/' unless $base_uri =~ m{/$};
+    return $base_uri;
+}
+
+sub _store_bibframe_conversion {
+    my ($self, $rdfxml, $triples, $biblionumber, $marc_record, $record_base_uri) = @_;
+
+    my $store = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SemanticStore->new();
+    return $store->store_bibframe_rdf(
+        $triples,
+        biblio_id => $biblionumber,
+        source_format => 'bibframe',
+        replace => 1,
+        record_base_uri => $record_base_uri,
+        serialized_data => $rdfxml,
+        marc_record => $marc_record,
+    );
 }
 
 =head2 store_export

@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS record_links (
     relationship_uri    VARCHAR(512),
     sequence            SMALLINT UNSIGNED DEFAULT 0,
     properties_json     JSON,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     UNIQUE KEY (source_resource_id, target_resource_id, relationship_type),
     KEY (target_resource_id),

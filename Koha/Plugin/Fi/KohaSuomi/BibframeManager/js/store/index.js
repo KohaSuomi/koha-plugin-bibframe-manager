@@ -8,7 +8,7 @@ export const useBibframeStore = defineStore('bibframe', {
         baseUri: 'http://urn.fi/URN:NBN:fi:bib:',
         recordId: '',
         outputFormat: 'turtle',
-        saveToDatabase: false,
+        isSaving: false,
         // Standard selection: 'bffi' (Work > Expression > Manifestation > Item)
         // or 'bibframe2' (BIBFRAME 2.0: Work > Instance > Item)
         standard: 'bffi',
@@ -195,7 +195,13 @@ export const useBibframeStore = defineStore('bibframe', {
         async convertRecord(biblionumber) {
             try {
                 const { convertRecordToBibframe } = usePluginApi();
-                const converted = await convertRecordToBibframe(biblionumber, this.outputFormat, this.standard);
+                const converted = await convertRecordToBibframe(
+                    biblionumber,
+                    this.outputFormat,
+                    this.standard,
+                    false,
+                    this.baseUri
+                );
                 
                 // Populate entities from the triplets
                 if (converted.triples && converted.triples.length > 0) {
@@ -210,6 +216,40 @@ export const useBibframeStore = defineStore('bibframe', {
             }
         },
         
+        async saveToDatabase() {
+            this.error = null;
+            const biblionumber = String(this.recordId || '');
+            if (!/^\d+$/.test(biblionumber)) {
+                this.error = 'Load a numeric biblionumber before saving to the database';
+                return false;
+            }
+
+            this.isSaving = true;
+            try {
+                const { convertRecordToBibframe } = usePluginApi();
+                const converted = await convertRecordToBibframe(
+                    Number(biblionumber),
+                    this.outputFormat,
+                    this.standard,
+                    true,
+                    this.baseUri
+                );
+                if (!converted.triples || converted.triples.length === 0) {
+                    throw new Error('The database save returned no BIBFRAME triples');
+                }
+                this.populateEntitiesFromTriples(converted.triples);
+                this.generatedOutput = converted.formatted;
+                this.allTriples = converted.triples.map((t, i) => ({ ...t, id: i }));
+                this.success = converted.message || 'Record saved to the database';
+                return true;
+            } catch (err) {
+                this.error = err.message || 'Failed to save record to the database';
+                return false;
+            } finally {
+                this.isSaving = false;
+            }
+        },
+
         populateEntitiesFromTriples(triples) {
             // Clear existing entities
             this.entities = [];

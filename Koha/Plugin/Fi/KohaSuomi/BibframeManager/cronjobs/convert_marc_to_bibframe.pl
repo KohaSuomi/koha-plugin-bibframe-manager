@@ -26,9 +26,11 @@ use MARC::File::XML (BinaryEncoding => 'utf8');
 use Koha::Biblios;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SemanticStore;
 use XML::LibXML;
 use Encode qw(encode_utf8);
 use File::Temp qw(tempfile);
+use File::Basename qw(dirname);
 
 # Path to the marc2bibframe2 stylesheet bundled with this plugin -
 # adjust or override with --xsl
@@ -64,6 +66,7 @@ my $idsource;
 my $keep_marcxml;
 my $dry_run;
 my $verbose;
+my $store_to_database;
 my $help;
 
 GetOptions(
@@ -85,6 +88,7 @@ GetOptions(
     'keep-marcxml=s'   => \$keep_marcxml,
     'dry-run'          => \$dry_run,
     'verbose'          => \$verbose,
+    'store'            => \$store_to_database,
     'help|?'           => \$help,
 ) or pod2usage(2);
 
@@ -96,6 +100,8 @@ my %valid_engines = ( 'xslt' => 1, 'plugin' => 1 );
 unless ($valid_engines{$engine}) {
     die "Invalid engine: $engine. Valid engines are: xslt, plugin\n";
 }
+
+die "--store requires --engine=xslt\n" if $store_to_database && $engine ne 'xslt';
 
 # Validate format (plugin engine only)
 my %valid_formats = (
@@ -236,6 +242,12 @@ sub convert_with_xslt {
     if ($dry_run) {
         print "Dry run: not writing $output\n" if $verbose;
         print "Would convert $converted record(s) to BIBFRAME.\n";
+        print "Would store $converted record(s) in the semantic store.\n" if $store_to_database;
+        return;
+    }
+
+    if ($store_to_database) {
+        convert_and_store_records(\@records, $output);
         return;
     }
 
@@ -295,6 +307,111 @@ sub convert_with_xslt {
     if ($skipped) {
         print "  Skipped $skipped invalid record(s)\n";
     }
+}
+
+sub convert_and_store_records {
+    my ($records, $output) = @_;
+
+    my $converter = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe->new();
+    my $store = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SemanticStore->new();
+    my $stored = 0;
+    my $errors = 0;
+
+    for my $record (@$records) {
+        my $biblionumber = $record->{biblionumber};
+        my $tmpfile;
+        eval {
+            my $marc_record = MARC::Record::new_from_xml($record->{xml}, 'UTF-8', 'MARC21');
+            die "No MARC21 record found for biblionumber $biblionumber\n" unless $marc_record;
+
+            my $record_base_uri = record_base_uri($baseuri, $biblionumber);
+            my %options = (
+                base_uri => $record_base_uri,
+                xslt_path => $xsl,
+            );
+            $options{idsource} = $idsource if defined $idsource;
+            my $rdfxml = $converter->convert_record_with_xslt($marc_record, %options);
+            die "XSLT conversion produced no output for biblionumber $biblionumber\n"
+                unless $rdfxml;
+            my $triples = $converter->rdf_to_triples($rdfxml);
+            die "RDF parsing produced no triples for biblionumber $biblionumber\n"
+                unless $triples && @$triples;
+
+            my $filename = xslt_output_filename($output, $biblionumber, scalar(@$records));
+            my $serialized = $format eq 'json'
+                ? $converter->rdf_to_json($rdfxml)
+                : $rdfxml;
+            my $tmpfh;
+            ($tmpfh, $tmpfile) = tempfile(
+                'marc2bibframe-store-XXXXXX',
+                DIR    => dirname($filename),
+                SUFFIX => ($format eq 'json' ? '.json' : '.rdf'),
+                UNLINK => 0,
+            );
+            binmode $tmpfh, ':raw';
+            print {$tmpfh} $serialized
+                or die "Cannot write temporary output for $filename: $!\n";
+            close $tmpfh
+                or die "Cannot close temporary output for $filename: $!\n";
+
+            my $storage;
+            eval {
+                $storage = $store->store_bibframe_rdf(
+                    $triples,
+                    biblio_id => $biblionumber,
+                    source_format => 'bibframe',
+                    replace => 1,
+                    record_base_uri => $record_base_uri,
+                    serialized_data => $rdfxml,
+                    marc_record => $marc_record,
+                );
+            };
+            if ($@) {
+                unlink $tmpfile;
+                die $@;
+            }
+
+            $stored++;
+            say "  Stored biblionumber $biblionumber: $filename" if $verbose;
+            say "  Resources: $storage->{resources_stored}, properties: $storage->{properties_stored}, links: $storage->{links_stored}" if $verbose;
+
+            rename $tmpfile, $filename
+                or die "Stored biblionumber $biblionumber, but cannot write $filename: $!\n";
+        };
+        if ($@) {
+            unlink $tmpfile if $tmpfile;
+            warn "Error storing biblionumber $biblionumber: $@\n";
+            $errors++;
+        }
+    }
+
+    say "=" x 60;
+    say "Storage Summary:";
+    say "  Total biblionumbers: $total";
+    say "  Stored: $stored";
+    say "  Errors: $errors";
+    say "=" x 60;
+    exit($errors > 0 ? 1 : 0);
+}
+
+sub record_base_uri {
+    my ($base, $biblionumber) = @_;
+
+    $base .= $biblionumber;
+    $base .= '/' unless $base =~ m{/$};
+    return $base;
+}
+
+sub xslt_output_filename {
+    my ($output, $biblionumber, $count) = @_;
+
+    my $extension = $format eq 'json' ? '.json' : '.rdf';
+    if ($count > 1) {
+        $output =~ s/(\.[^.]*)?$/_$biblionumber$extension/;
+    } elsif ($output !~ /\Q$extension\E$/) {
+        $output .= $extension;
+    }
+    return $output;
 }
 
 sub convert_with_plugin {
@@ -451,6 +568,13 @@ Skip the first N records.
 Plugin engine: turtle (default), json-ld, ntriples, rdfxml, json.
 XSLT engine: turtle (default, RDF/XML output), json (structured JSON after
 RDF/XML conversion).
+
+=item B<--store>
+
+Store each XSLT conversion in the semantic store. This requires
+B<--engine=xslt> (the default) and a Koha database connection. Stored LoC
+BIBFRAME is replaced transactionally on each run. The output is written per
+record with a biblionumber suffix when multiple records are selected.
 
 =item B<--output=PATH>
 

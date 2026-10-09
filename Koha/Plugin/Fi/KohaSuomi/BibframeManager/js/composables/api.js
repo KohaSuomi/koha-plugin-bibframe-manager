@@ -17,13 +17,16 @@ export function usePluginApi() {
     const url = '/contrib/kohasuomi';
 
     return {
-        async convertRecordToBibframe(biblionumber, format = 'turtle', standard = 'bffi') {
-            return await httpClient.post(url + '/bibframe/convert', {
+        async convertRecordToBibframe(biblionumber, format = 'turtle', standard = 'bffi', saveToDb = false, baseUri = null) {
+            const payload = {
                 method: 'biblio',
                 biblionumber: biblionumber,
                 format: format,
-                standard: standard
-            });
+                standard: standard,
+                save_to_db: saveToDb
+            };
+            if (baseUri) payload.base_uri = baseUri;
+            return await httpClient.post(url + '/bibframe/convert', payload);
         }
     }
 }

@@ -189,9 +189,14 @@ Parameters:
     %options:
         biblio_id    - Koha biblionumber (optional)
         source_format - 'bibframe' (default), 'bffi'
+        replace      - Replace the biblio's previous graph transactionally
+        record_base_uri - URI prefix identifying resources local to this record
+        serialized_data - Serialized RDF/XML representation to retain
+        marc_record  - Authoritative MARC record to retain as a format mapping
 
-Returns:
-    Hashref with resource_ids and counts
+    Returns:
+    Hashref with resource_ids, graph_id, format mapping IDs, and counts
+
 
 =cut
 
@@ -200,15 +205,12 @@ sub store_bibframe_rdf {
 
     my $biblio_id = $options{biblio_id};
     my $source_format = $options{source_format} || 'bibframe';
+    my $replace = $options{replace} ? 1 : 0;
+    my $record_base_uri = $options{record_base_uri};
 
-    my %resources_to_insert;
-    my @properties_to_insert;
-    my @links_to_insert;
+    die 'replace storage requires biblio_id' if $replace && !defined $biblio_id;
+    die 'triples must be an array reference' unless ref($triples) eq 'ARRAY';
 
-    # BIBFRAME type URIs
-    # The LoC 3-level model (Work -> Instance -> Item) is the canonical stored
-    # form, so LoC Instance maps to the stored 'Instance' type. BFFI 4-level
-    # input still maps Manifestation to Manifestation.
     my %type_map = (
         'http://id.loc.gov/ontologies/bibframe/Work'         => 'Work',
         'http://id.loc.gov/ontologies/bibframe/Expression'   => 'Expression',
@@ -218,103 +220,229 @@ sub store_bibframe_rdf {
         'http://id.loc.gov/ontologies/bibframe/Person'       => 'Person',
         'http://id.loc.gov/ontologies/bibframe/Organization' => 'Organization',
         'http://id.loc.gov/ontologies/bibframe/Meeting'      => 'Meeting',
+        'http://id.loc.gov/ontologies/bibframe/Family'       => 'Family',
         'http://id.loc.gov/ontologies/bibframe/Topic'        => 'Topic',
+        'http://id.loc.gov/ontologies/bibframe/GenreForm'    => 'GenreForm',
+        'http://id.loc.gov/ontologies/bibframe/Geographic'   => 'Geographic',
+        'http://id.loc.gov/ontologies/bibframe/Temporal'     => 'Temporal',
+        'http://id.loc.gov/ontologies/bibframe/Title'        => 'Title',
+        'http://id.loc.gov/ontologies/bibframe/Place'        => 'Place',
+        'http://id.loc.gov/ontologies/bibframe/Language'     => 'Language',
+        'http://id.loc.gov/ontologies/bibframe/Series'       => 'Series',
+        'http://id.loc.gov/ontologies/bibframe/AdminMetadata' => 'AdminMetadata',
         'http://urn.fi/URN:NBN:fi:schema:bffi:Work'          => 'Work',
         'http://urn.fi/URN:NBN:fi:schema:bffi:Expression'    => 'Expression',
         'http://urn.fi/URN:NBN:fi:schema:bffi:Manifestation' => 'Manifestation',
         'http://urn.fi/URN:NBN:fi:schema:bffi:Item'          => 'Item',
     );
 
-    # Relationship URIs for link extraction
-    my %relationship_map = (
-        'hasExpression' => 'hasExpression',
-        'expressionOf' => 'expressionOf',
-        'manifestationOfExpression' => 'manifestationOfExpression',
-        'expressionManifested' => 'expressionManifested',
-        'hasInstance' => 'hasInstance',
-        'instanceOf' => 'instanceOf',
-        'hasItem' => 'hasItem',
-        'itemOf' => 'itemOf',
-        'contribution' => 'contribution',
-        'subject' => 'subject',
-        'partOf' => 'partOf',
-        'hasPart' => 'hasPart',
+    my %type_priority = (
+        Agent => 100,
+        Work => 20,
+        Expression => 20,
+        Instance => 20,
+        Manifestation => 20,
+        Item => 20,
+        Person => 50,
+        Organization => 50,
+        Meeting => 50,
+        Family => 50,
+        Topic => 50,
+        GenreForm => 50,
+        Geographic => 50,
+        Temporal => 50,
+        Title => 50,
+        Place => 50,
+        Language => 50,
+        Series => 50,
+        AdminMetadata => 50,
     );
 
-    # First pass: identify resources and their types
-    for my $triple (@$triples) {
-        my $subject = $triple->{subject};
-        my $predicate = $triple->{predicate};
-        my $object = $triple->{object};
-        my $object_type = $triple->{object_type};
+    my %relationship_map = map { $_ => $_ } qw(
+        hasExpression expressionOf manifestationOfExpression expressionManifested
+        hasInstance instanceOf hasItem itemOf contribution subject partOf hasPart
+        agent creator contributor
+    );
 
-        # Detect rdf:type
-        if ($predicate =~ /rdf:type$/ && $object_type eq 'uri') {
+    my (%types_by_subject, %labels, %label_priorities, %sequence);
+    my (%agent_of_subject, %pending_role_by_subject, %agent_role);
+    my $remember_agent_role = sub {
+        my ($subject, $agent, $role) = @_;
+        if (my $existing = $agent_role{$subject}{$agent}) {
+            my $existing_rel = $self->_role_relationship_type($existing);
+            my $new_rel = $self->_role_relationship_type($role);
+            return if ($existing_rel || '') eq 'creator';
+            return unless ($new_rel || '') eq 'creator';
+        }
+        $agent_role{$subject}{$agent} = $role;
+    };
+    for my $triple (@$triples) {
+        next unless defined $triple->{subject} && !ref($triple->{subject});
+        my $subject = $triple->{subject};
+        my $predicate = $triple->{predicate} || '';
+        my $object_type = $triple->{object_type} || 'literal';
+        my $object = $triple->{object};
+
+        if ($self->_is_rdf_type($predicate) && $object_type eq 'uri' && defined $object && !ref($object)) {
             my $resource_type = $type_map{$object};
-            if ($resource_type && !$resources_to_insert{$subject}) {
-                $resources_to_insert{$subject} = {
-                    uri => $subject,
-                    resource_type => $resource_type,
-                    biblio_id => $biblio_id,
-                    source_format => $source_format,
+            next unless $resource_type;
+            my $priority = $type_priority{$resource_type} || 100;
+            if (!$types_by_subject{$triple->{subject}}
+                || $priority < $types_by_subject{$triple->{subject}}{priority}) {
+                $types_by_subject{$triple->{subject}} = {
+                    type => $resource_type,
+                    priority => $priority,
                 };
             }
         }
+
+        my ($localname) = $predicate =~ m{(?:^|:|/|#)([^/:]+)$};
+        next unless defined $localname;
+
+        # An agent and its role(s) are adjacent properties of the same subject
+        # (bf:contribution/bf:Contribution flattens onto the parent resource).
+        # Any other property in between breaks the pairing, so adminMetadata
+        # agents can never pick up a contribution role emitted elsewhere.
+        if ($localname ne 'agent' && $localname ne 'role') {
+            delete $agent_of_subject{$subject};
+            delete $pending_role_by_subject{$subject};
+        }
+
+        if ($object_type eq 'uri' && defined $object && !ref($object)) {
+            if ($localname eq 'agent') {
+                if (my $role = delete $pending_role_by_subject{$subject}) {
+                    $remember_agent_role->($subject, $object, $role);
+                }
+                $agent_of_subject{$subject} = $object;
+            } elsif ($localname eq 'role') {
+                if ($agent_of_subject{$subject}) {
+                    $remember_agent_role->($subject, $agent_of_subject{$subject}, $object);
+                } else {
+                    $pending_role_by_subject{$subject} = $object;
+                }
+            }
+        }
+        next if $object_type ne 'literal' || !defined $object || ref($object);
+        my $priority;
+        if ($localname eq 'mainTitle') {
+            # Beats rdfs:label: flattened anonymous nodes (bf:Note etc.) can
+            # contribute their own rdfs:label to the parent resource.
+            $priority = 110;
+        } elsif ($predicate eq 'rdfs:label' || $predicate =~ /\/label$/) {
+            $priority = 100;
+        } elsif ($localname eq 'title') {
+            $priority = 80;
+        } elsif ($localname eq 'prefLabel') {
+            $priority = 70;
+        } elsif ($localname eq 'code') {
+            $priority = 60;
+        }
+        if ($priority && (!defined $label_priorities{$triple->{subject}}
+            || $priority > $label_priorities{$triple->{subject}})) {
+            $labels{$triple->{subject}} = substr($object, 0, 1024);
+            $label_priorities{$triple->{subject}} = $priority;
+        }
     }
 
-    # Second pass: extract properties and links
+    my %resources_to_insert;
+    for my $uri (keys %types_by_subject) {
+        my $shared = defined($biblio_id)
+            && defined($record_base_uri)
+            && index($uri, $record_base_uri) != 0;
+        my $label = $labels{$uri} || '';
+        $resources_to_insert{$uri} = {
+            uri => $uri,
+            resource_type => $types_by_subject{$uri}{type},
+            biblio_id => $shared ? undef : $biblio_id,
+            label => $label,
+            label_normalized => lc($label),
+            source_format => $source_format,
+            shared => $shared,
+        };
+    }
+
+    die 'BIBFRAME triples contained no supported resources' unless %resources_to_insert;
+
+    my @properties_to_insert;
+    my @links_to_insert;
     for my $triple (@$triples) {
         my $subject = $triple->{subject};
-        my $predicate = $triple->{predicate};
+        next unless defined $subject && exists $resources_to_insert{$subject};
+
+        my $predicate = $triple->{predicate} || '';
         my $object = $triple->{object};
-        my $object_type = $triple->{object_type};
+        my $object_type = $triple->{object_type} || 'literal';
+        next if $self->_is_rdf_type($predicate);
+        next unless defined $object && !ref($object);
 
-        # Skip rdf:type (already handled)
-        next if $predicate =~ /rdf:type$/;
+        my ($localname) = $predicate =~ m{(?:^|:|/|#)([^/:]+)$};
+        next unless defined $localname;
 
-        # Extract predicate local name
-        my ($localname) = $predicate =~ m{[/#]([^/#]+)$};
-        next unless $localname;
-
-        # Check if this is a relationship (object is URI to another resource)
-        if ($object_type eq 'uri' && exists $resources_to_insert{$object}) {
-            # This is a link between resources
-            my $rel_type = $relationship_map{$localname} || $localname;
+        my $relationship_type = $relationship_map{$localname};
+        if ($localname eq 'agent' && $agent_role{$subject}{$object}) {
+            $relationship_type = $self->_role_relationship_type($agent_role{$subject}{$object})
+                || $relationship_type;
+        }
+        if ($object_type eq 'uri' && $relationship_type && exists $resources_to_insert{$object}) {
             push @links_to_insert, {
                 source_uri => $subject,
                 target_uri => $object,
-                relationship_type => $rel_type,
-                relationship_uri => $predicate,
+                relationship_type => $relationship_type,
+                relationship_uri => $self->_expand_predicate_uri($predicate),
             };
             next;
         }
 
-        # Otherwise, it's a property
-        my $value_type = ($object_type eq 'uri') ? 'resource' : 'literal';
-        my $value_text = ($value_type eq 'literal') ? $object : undef;
-        my $value_resource_uri = ($value_type eq 'resource') ? $object : undef;
-
+        my $value_type = $object_type eq 'uri' ? 'resource'
+            : $object_type eq 'bnode' ? 'bnode'
+            : 'literal';
+        my $sequence = $sequence{$subject}++;
         push @properties_to_insert, {
             resource_uri => $subject,
-            property_uri => $predicate,
+            property_uri => $self->_expand_predicate_uri($predicate),
             property_key => $localname,
             value_type => $value_type,
-            value_text => $value_text,
-            value_resource_uri => $value_resource_uri,
+            value_text => $object,
+            value_resource_uri => $value_type eq 'resource' ? $object : undef,
             value_lang => $triple->{lang},
             value_datatype => $triple->{datatype},
+            sequence => $sequence,
         };
     }
 
-    # Execute storage
-    my $result = $self->_execute_storage(
+    my $serialized_data = $options{serialized_data};
+    unless (defined $serialized_data) {
+        my $db = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database->new();
+        $serialized_data = $db->serializeTriples($triples, 'rdfxml');
+    }
+
+    my $result = $self->_execute_bibframe_storage(
         [values %resources_to_insert],
         \@properties_to_insert,
-        \@links_to_insert
+        \@links_to_insert,
+        biblio_id => $biblio_id,
+        replace => $replace,
+        serialized_data => $serialized_data,
+        marc_record => $options{marc_record},
     );
 
-    # Rebuild summary table rows for the entities just stored
-    $self->_rebuild_summaries(\%resources_to_insert);
+    my %summary_types = map { $_->{uri} => $_->{resource_type} } values %resources_to_insert;
+    my $summary_result = eval { $self->_rebuild_summaries(\%summary_types); 1 };
+    unless ($summary_result) {
+        my $error = $@ || 'unknown summary rebuild failure';
+        chomp $error;
+        push @{ $result->{warnings} }, "summary rebuild failed: $error";
+        warn "BIBFRAME summary rebuild failed: $error\n";
+    }
+    if ($biblio_id) {
+        my $search_result = eval { $self->_sync_search_index($biblio_id); 1 };
+        unless ($search_result) {
+            my $error = $@ || 'unknown search synchronization failure';
+            chomp $error;
+            push @{ $result->{warnings} }, "search synchronization failed: $error";
+            warn "BIBFRAME search synchronization failed: $error\n";
+        }
+    }
 
     return $result;
 }
@@ -322,6 +450,363 @@ sub store_bibframe_rdf {
 =head1 PRIVATE METHODS
 
 =cut
+
+sub _role_relationship_type {
+    my ($self, $role) = @_;
+
+    return undef unless defined $role;
+    $role =~ s/[?#].*$//;
+    my ($code) = $role =~ m{/([^/]+)$};
+    return undef unless defined $code;
+    $code = lc $code;
+    return 'creator' if $code =~ /^(?:aut|cre|author|creator)$/;
+    return 'contributor' if $code =~ /^(?:ctb|contributor|contribution)$/;
+    return undef;
+}
+
+sub _is_rdf_type {
+    my ($self, $predicate) = @_;
+
+    return 0 unless defined $predicate;
+    return 1 if $predicate eq 'rdf:type';
+    return 1 if $predicate eq 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+    return 0;
+}
+
+sub _expand_predicate_uri {
+    my ($self, $predicate) = @_;
+
+    return undef unless defined $predicate;
+    return $predicate if $predicate =~ m{^https?://};
+
+    my %namespaces = (
+        rdf => 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+        rdfs => 'http://www.w3.org/2000/01/rdf-schema#',
+        owl => 'http://www.w3.org/2002/07/owl#',
+        bf => 'http://id.loc.gov/ontologies/bibframe#',
+        bffi => 'http://urn.fi/URN:NBN:fi:schema:bffi:',
+        bflc => 'http://id.loc.gov/ontologies/bflc#',
+        dcterms => 'http://purl.org/dc/terms/',
+        dct => 'http://purl.org/dc/elements/1.1/',
+        skos => 'http://www.w3.org/2004/02/skos/core#',
+        foaf => 'http://xmlns.com/foaf/0.1/',
+        lclocal => 'http://id.loc.gov/ontologies/lclocal/',
+    );
+
+    if ($predicate =~ m{^([A-Za-z][A-Za-z0-9_-]*):(.+)$} && $namespaces{$1}) {
+        return $namespaces{$1} . $2;
+    }
+    return $predicate;
+}
+
+sub _execute_bibframe_storage {
+    my (
+        $self,
+        $resources_ref,
+        $properties_ref,
+        $links_ref,
+        %options
+    ) = @_;
+
+    my $biblio_id = $options{biblio_id};
+    my $replace = $options{replace} ? 1 : 0;
+    my $result = {
+        resources_stored => 0,
+        properties_stored => 0,
+        links_stored => 0,
+        resources_created => 0,
+        properties_created => 0,
+        links_created => 0,
+        resource_id_by_uri => {},
+        warnings => [],
+    };
+    my $dbh = $self->dbh;
+
+    eval {
+        $dbh->begin_work;
+
+    my $graph_id;
+    if (defined $biblio_id) {
+        my $graph_sth = $dbh->prepare(q{
+            INSERT INTO record_graphs (biblio_id, graph_type)
+            VALUES (?, 'bibframe')
+            ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id),
+                graph_type = VALUES(graph_type),
+                updated_at = CURRENT_TIMESTAMP
+        });
+        $graph_sth->execute($biblio_id);
+        $graph_id = $dbh->last_insert_id;
+        $graph_sth->finish;
+    }
+
+    my @previous_shared_ids;
+    if ($replace && defined $graph_id) {
+        my $shared_sth = $dbh->prepare(q{
+            SELECT r.id
+            FROM record_graph_resources gr
+            JOIN record_resources r ON r.id = gr.resource_id
+            WHERE gr.graph_id = ?
+              AND r.biblio_id IS NULL
+        });
+        $shared_sth->execute($graph_id);
+        while (my $row = $shared_sth->fetchrow_hashref()) {
+            push @previous_shared_ids, $row->{id};
+        }
+        $shared_sth->finish;
+    }
+
+    if ($replace && defined $biblio_id) {
+        my $membership_sth = $dbh->prepare(q{
+            DELETE FROM record_graph_resources
+            WHERE graph_id = ?
+        });
+        $membership_sth->execute($graph_id);
+        $membership_sth->finish;
+
+        my $resource_sth = $dbh->prepare(q{
+            DELETE FROM record_resources
+            WHERE biblio_id = ?
+        });
+        $resource_sth->execute($biblio_id);
+        $resource_sth->finish;
+    }
+
+    my $resource_sth = $dbh->prepare(q{
+        INSERT INTO record_resources
+            (uri, resource_type, biblio_id, item_id, label, label_normalized, source_format)
+        VALUES (?, ?, ?, NULL, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id),
+            resource_type = VALUES(resource_type),
+            biblio_id = IF(?, NULL, VALUES(biblio_id)),
+            item_id = COALESCE(VALUES(item_id), item_id),
+            label = IF(VALUES(label) = '', label, VALUES(label)),
+            label_normalized = IF(VALUES(label_normalized) = '', label_normalized, VALUES(label_normalized)),
+            source_format = VALUES(source_format),
+            updated_at = CURRENT_TIMESTAMP
+    });
+
+    my %resource_id_by_uri;
+    for my $resource (@$resources_ref) {
+        $resource_sth->execute(
+            $resource->{uri},
+            $resource->{resource_type},
+            $resource->{biblio_id},
+            defined($resource->{label}) ? $resource->{label} : '',
+            defined($resource->{label_normalized}) ? $resource->{label_normalized} : '',
+            defined($resource->{source_format}) ? $resource->{source_format} : 'bibframe',
+            $resource->{shared} ? 1 : 0,
+        );
+        my $resource_id = $dbh->last_insert_id;
+        $resource_id_by_uri{$resource->{uri}} = $resource_id;
+        $result->{resource_id_by_uri}{$resource->{uri}} = $resource_id;
+        $result->{resources_stored}++;
+        $result->{resources_created}++;
+    }
+    $resource_sth->finish;
+
+    if (@previous_shared_ids) {
+        my %current_resource_ids = map { $_ => 1 } values %resource_id_by_uri;
+        my $other_graph_count_sth = $dbh->prepare(q{
+            SELECT COUNT(*)
+            FROM record_graph_resources
+            WHERE resource_id = ?
+              AND graph_id <> ?
+        });
+        my $delete_properties_sth = $dbh->prepare(q{
+            DELETE FROM record_properties
+            WHERE resource_id = ?
+        });
+        my $delete_links_sth = $dbh->prepare(q{
+            DELETE FROM record_links
+            WHERE source_resource_id = ?
+               OR target_resource_id = ?
+        });
+        my $delete_resource_sth = $dbh->prepare(q{
+            DELETE FROM record_resources
+            WHERE id = ?
+              AND biblio_id IS NULL
+        });
+        for my $resource_id (@previous_shared_ids) {
+            $other_graph_count_sth->execute($resource_id, $graph_id);
+            my ($other_count) = $other_graph_count_sth->fetchrow_array;
+            $other_graph_count_sth->finish;
+            next if $other_count;
+
+            if ($current_resource_ids{$resource_id}) {
+                $delete_properties_sth->execute($resource_id);
+                $delete_links_sth->execute($resource_id, $resource_id);
+            } else {
+                $delete_resource_sth->execute($resource_id);
+            }
+        }
+        $other_graph_count_sth->finish;
+        $delete_properties_sth->finish;
+        $delete_links_sth->finish;
+        $delete_resource_sth->finish;
+    }
+
+    my $property_sth = $dbh->prepare(q{
+        INSERT INTO record_properties
+            (resource_id, property_uri, property_key, value_type,
+             value_resource_id, value_text, value_lang, value_datatype, sequence)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    });
+    my $property_exists_sth = $dbh->prepare(q{
+        SELECT id
+        FROM record_properties
+        WHERE resource_id = ?
+          AND property_uri = ?
+          AND property_key = ?
+          AND value_type = ?
+          AND value_resource_id <=> ?
+          AND value_text <=> ?
+          AND value_lang <=> ?
+          AND value_datatype <=> ?
+        LIMIT 1
+    });
+    for my $property (@$properties_ref) {
+        my $resource_id = $resource_id_by_uri{$property->{resource_uri}};
+        next unless $resource_id;
+        my $value_resource_id = $property->{value_resource_uri}
+            ? $resource_id_by_uri{$property->{value_resource_uri}}
+            : undef;
+        $property_exists_sth->execute(
+            $resource_id,
+            $property->{property_uri},
+            $property->{property_key},
+            $property->{value_type},
+            $value_resource_id,
+            $property->{value_text},
+            $property->{value_lang},
+            $property->{value_datatype},
+        );
+        next if $property_exists_sth->fetchrow_arrayref;
+        $property_sth->execute(
+            $resource_id,
+            $property->{property_uri},
+            $property->{property_key},
+            $property->{value_type},
+            $value_resource_id,
+            $property->{value_text},
+            $property->{value_lang},
+            $property->{value_datatype},
+            defined($property->{sequence}) ? $property->{sequence} : 0,
+        );
+        $result->{properties_stored}++;
+        $result->{properties_created}++;
+    }
+    $property_exists_sth->finish;
+    $property_sth->finish;
+
+    my $link_sth;
+    if (@$links_ref) {
+        $link_sth = $dbh->prepare(q{
+            INSERT INTO record_links
+                (source_resource_id, target_resource_id, relationship_type, relationship_uri)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id),
+                relationship_uri = VALUES(relationship_uri),
+                updated_at = CURRENT_TIMESTAMP
+        });
+        for my $link (@$links_ref) {
+            my $source_id = $resource_id_by_uri{$link->{source_uri}};
+            my $target_id = $resource_id_by_uri{$link->{target_uri}};
+            next unless $source_id && $target_id;
+            $link_sth->execute(
+                $source_id,
+                $target_id,
+                $link->{relationship_type},
+                $link->{relationship_uri},
+            );
+            $result->{links_stored}++;
+            $result->{links_created}++;
+        }
+        $link_sth->finish;
+    }
+
+    if (defined $graph_id) {
+        my $membership_sth = $dbh->prepare(q{
+            INSERT INTO record_graph_resources
+                (graph_id, resource_id, role)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE role = VALUES(role)
+        });
+        for my $resource (@$resources_ref) {
+            my $resource_id = $resource_id_by_uri{$resource->{uri}};
+            next unless $resource_id;
+            $membership_sth->execute($graph_id, $resource_id, lc($resource->{resource_type}));
+        }
+        $membership_sth->finish;
+    }
+
+    if (defined $biblio_id && defined $options{serialized_data}) {
+        my ($primary_resource) = grep {
+            ($_->{resource_type} || '') eq 'Instance'
+                || ($_->{resource_type} || '') eq 'Manifestation'
+        } @$resources_ref;
+        $primary_resource ||= (grep { ($_->{resource_type} || '') eq 'Work' } @$resources_ref)[0];
+        $primary_resource ||= ($resources_ref->[0]);
+        if ($primary_resource) {
+            my $mapping_resource_id = $resource_id_by_uri{$primary_resource->{uri}};
+            my $mapping_id = $self->_upsert_format_mapping(
+                $mapping_resource_id,
+                'bibframe2',
+                $options{serialized_data},
+                undef,
+            );
+            $result->{format_mapping_id} = $mapping_id;
+            $result->{primary_resource_id} = $mapping_resource_id;
+        }
+
+        if ($options{marc_record}) {
+            my $marc_xml = eval { $options{marc_record}->as_xml };
+            if (defined $marc_xml) {
+                my $marc_tags = $self->_extract_marc_tags_json($options{marc_record});
+                $result->{marc_format_mapping_id} = $self->_upsert_format_mapping(
+                    $result->{primary_resource_id},
+                    'marc21',
+                    $marc_xml,
+                    $marc_tags,
+                );
+            }
+        }
+    }
+
+        $dbh->commit;
+        $result->{graph_id} = $graph_id;
+        1;
+    };
+
+    if ($@) {
+        my $error = $@;
+        eval { $dbh->rollback };
+        die "BIBFRAME storage failed: $error";
+    }
+
+    return $result;
+}
+
+sub _upsert_format_mapping {
+    my ($self, $resource_id, $format_name, $serialized_data, $marc_tags_json) = @_;
+
+    return undef unless $resource_id;
+    my $sth = $self->dbh->prepare(q{
+        INSERT INTO record_format_mappings
+            (resource_id, format_name, serialized_data, marc_tags_json, version)
+        VALUES (?, ?, ?, ?, 1)
+        ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id),
+            resource_id = VALUES(resource_id),
+            format_name = VALUES(format_name),
+            serialized_data = VALUES(serialized_data),
+            marc_tags_json = VALUES(marc_tags_json),
+            version = version + 1,
+            updated_at = CURRENT_TIMESTAMP
+    });
+    $sth->execute($resource_id, $format_name, $serialized_data, $marc_tags_json);
+    my $mapping_id = $self->dbh->last_insert_id;
+    $sth->finish;
+    return $mapping_id;
+}
 
 sub _extract_work_label {
     my ($self, $marc_record) = @_;
@@ -405,7 +890,7 @@ sub _extract_work_properties {
     # Classification (from 050, 080, 084)
     for my $tag (qw(050 080 084)) {
         if (my $field = $marc_record->field($tag)) {
-            my $classification = join(' ', map { $_->[1] } $field->subfield('a'));
+            my $classification = join(' ', $field->subfield('a'));
             if ($classification) {
                 push @{$properties_ref->{$work_uri}}, {
                     property_uri => "${bffi_ns}classification",
@@ -420,7 +905,7 @@ sub _extract_work_properties {
     # Work characteristics (from 380-386)
     for my $tag (380..386) {
         if (my $field = $marc_record->field($tag)) {
-            my $value = join(' ', map { $_->[1] } $field->subfield('a'));
+            my $value = join(' ', $field->subfield('a'));
             if ($value) {
                 push @{$properties_ref->{$work_uri}}, {
                     property_uri => "${bffi_ns}workCharacteristic",
@@ -493,7 +978,7 @@ sub _extract_instance_properties {
     # Notes (from 500-546)
     for my $tag (500..546) {
         if (my $field = $marc_record->field($tag)) {
-            my $note = join(' ', map { $_->[1] } $field->subfield('a'));
+            my $note = join(' ', $field->subfield('a'));
             if ($note) {
                 push @{$properties_ref->{$instance_uri}}, {
                     property_uri => "${bffi_ns}note",
@@ -559,7 +1044,7 @@ sub _extract_instance_properties {
 
     # Extent (from 300)
     if (my $field = $marc_record->field('300')) {
-        my $extent = join(' ', map { $_->[1] } $field->subfield('a'));
+        my $extent = join(' ', $field->subfield('a'));
         if ($extent) {
             push @{$properties_ref->{$instance_uri}}, {
                 property_uri => "${bffi_ns}extent",
@@ -988,17 +1473,13 @@ sub _save_format_mapping {
     my $res = $self->_find_existing_resource($resource_uri);
     return unless $res;
 
-    my $dbh = $self->dbh;
     my $xml = $marc_record->as_xml();
 
-    $dbh->do(
-        "INSERT INTO record_format_mappings (resource_id, format_name, serialized_data, marc_tags_json)
-         VALUES (?, 'marc21', ?, ?)
-         ON DUPLICATE KEY UPDATE serialized_data = VALUES(serialized_data),
-                                 marc_tags_json = VALUES(marc_tags_json),
-                                 version = version + 1,
-                                 updated_at = CURRENT_TIMESTAMP",
-        undef, $res->{id}, $xml, $self->_extract_marc_tags_json($marc_record)
+    $self->_upsert_format_mapping(
+        $res->{id},
+        'marc21',
+        $xml,
+        $self->_extract_marc_tags_json($marc_record),
     );
 }
 
@@ -1008,11 +1489,6 @@ sub _extract_marc_tags_json {
 
     my %tags;
     for my $field ($marc_record->fields()) {
-        next unless $field->is_control_field();
-        $tags{$field->tag()} = 1;
-    }
-    for my $field ($marc_record->fields()) {
-        next unless $field->is_data_field();
         $tags{$field->tag()} = 1;
     }
 
@@ -1058,8 +1534,8 @@ sub _execute_storage {
 
         # 2. Insert properties
         my $sth_prop = $dbh->prepare(
-            "INSERT INTO record_properties (resource_id, property_uri, property_key, value_type, value_text, value_lang, value_datatype)
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO record_properties (resource_id, property_uri, property_key, value_type, value_resource_id, value_text, value_lang, value_datatype)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         );
 
         for my $res_uri (keys %$properties_ref) {
@@ -1083,6 +1559,7 @@ sub _execute_storage {
                     $prop->{property_uri},
                     $prop->{property_key},
                     $prop->{value_type},
+                    $value_resource_id,
                     $prop->{value_text},
                     $prop->{value_lang},
                     $prop->{value_datatype},

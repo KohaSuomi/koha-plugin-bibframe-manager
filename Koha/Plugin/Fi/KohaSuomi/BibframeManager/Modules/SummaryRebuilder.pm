@@ -177,7 +177,7 @@ sub _rebuild_work_summary {
         my $rid = $work->{id};
 
         my $props = $self->_properties_for($rid);
-        my $title = $props->{title}->[0] || $work->{label} || '';
+        my $title = $props->{title}->[0] || $props->{mainTitle}->[0] || $work->{label} || '';
         my $work_type = $props->{work_type}->[0];
         my $original_language = $props->{originalLanguage}->[0];
 

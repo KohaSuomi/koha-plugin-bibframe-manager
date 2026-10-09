@@ -937,12 +937,26 @@ sub derive_wemi_from_loc {
     }
     $instance_uri ||= $instance_subjects[0] if @instance_subjects;
 
-    # Build derived URIs (strip LoC /resources/works/ or /resources/instances/ prefix)
+    # Derive a record identifier for the new WEMI URIs. Prefer the LoC
+    # /resources/works/ or /resources/instances/ path; otherwise fall back to the
+    # last path segment of a record-local URI (stripping any #Work/#Instance fragment).
     my $control_number;
-    if ($work_uri && $work_uri =~ m{/resources/works/(.+)$}) {
-        $control_number = $1;
-    } elsif ($instance_uri && $instance_uri =~ m{/resources/instances/(.+)$}) {
-        $control_number = $1;
+    for my $uri ($work_uri, $instance_uri) {
+        next unless $uri;
+        if ($uri =~ m{/resources/(?:works|instances)/([^/#]+)}) {
+            $control_number = $1;
+            last;
+        }
+    }
+    unless (defined $control_number) {
+        for my $uri ($work_uri, $instance_uri) {
+            next unless $uri;
+            (my $path = $uri) =~ s/#.*$//;
+            if ($path =~ m{([^/]+)$}) {
+                $control_number = $1;
+                last;
+            }
+        }
     }
 
     my $derived_work_uri = $work_uri;
