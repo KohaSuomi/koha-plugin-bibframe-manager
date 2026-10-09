@@ -76,8 +76,8 @@ sub serializeTriples {
     } elsif ($format eq 'turtle') {
         # Turtle format
         return $self->_toTurtle($triples);
-    } elsif ($format eq 'rdfxml') {
-        # RDF/XML format
+    } elsif ($format eq 'rdfxml' || $format eq 'rdf-xml') {
+        # RDF/XML format ('rdfxml' from the CLI, 'rdf-xml' from the API)
         return $self->_toRdfXml($triples);
     } elsif ($format eq 'json-ld') {
         # JSON-LD format
@@ -236,7 +236,8 @@ XML_HEADER
                     $attrs = qq{ rdf:datatype="$triple->{datatype}"};
                 }
                 
-                $output .= qq{    <property xmlns:property="$ns"$attrs>$value</property>\n};
+                my $prop_ns = defined $ns ? $ns : $pred_uri;
+                $output .= qq{    <property xmlns:property="$prop_ns"$attrs>$value</property>\n};
             }
         }
         
@@ -453,7 +454,15 @@ sub _toJson {
 =cut
 
 sub _build_entity_json {
-    my ($self, $subject_uri, $by_subject, $entity_types) = @_;
+    my ($self, $subject_uri, $by_subject, $entity_types, $seen) = @_;
+
+    $seen ||= {};
+
+    # Break cycles: BIBFRAME graphs contain back-references (e.g. Work
+    # hasInstance Instance while Instance instanceOf Work), so emit a plain
+    # reference when a URI is already on the current recursion path.
+    return { uri => $subject_uri } if $seen->{$subject_uri};
+    $seen->{$subject_uri} = 1;
 
     my $entity = {
         uri => $subject_uri,
@@ -493,7 +502,7 @@ sub _build_entity_json {
         # Handle nested entities: if the object is itself a subject with triples,
         # build a nested entity representation
         if ($t->{object_type} eq 'uri' && $by_subject->{$t->{object}}) {
-            my $nested = $self->_build_entity_json($t->{object}, $by_subject, $entity_types);
+            my $nested = $self->_build_entity_json($t->{object}, $by_subject, $entity_types, $seen);
             $value = $nested;
         }
 
@@ -508,6 +517,8 @@ sub _build_entity_json {
             $entity->{$key} = $value;
         }
     }
+
+    delete $seen->{$subject_uri};
 
     return $entity;
 }
