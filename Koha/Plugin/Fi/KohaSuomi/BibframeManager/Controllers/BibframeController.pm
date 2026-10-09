@@ -179,7 +179,7 @@ sub convert {
 
             return $c->render(
                 status => 200,
-                openapi => {
+                openapi => _defined_response({
                     triples => $triples,
                     formatted => $formatted_output,
                     format => $loc_format,
@@ -191,7 +191,7 @@ sub convert {
                     message => $save_to_db
                         ? 'MARC21 record successfully converted to BIBFRAME and stored'
                         : 'MARC21 record successfully converted to BIBFRAME via LoC XSLT'
-                }
+                })
             );
         }
 
@@ -252,7 +252,7 @@ sub convert {
         # Return response
         return $c->render(
             status => 200,
-            openapi => {
+            openapi => _defined_response({
                 triples => $triples,
                 formatted => $formatted_output,
                 format => $format,
@@ -264,7 +264,7 @@ sub convert {
                 message => $save_to_db
                     ? 'MARC21 record successfully converted to BFFI and stored as LoC BIBFRAME'
                     : 'MARC21 record successfully converted to BFFI (4-level WEMI derived from LoC BIBFRAME)'
-            }
+            })
         );
 
     } catch {
@@ -363,7 +363,7 @@ sub store_export {
 
         return $c->render(
             status => 200,
-            openapi => {
+            openapi => _defined_response({
                 triples => $triples,
                 formatted => $formatted_output,
                 format => $format,
@@ -372,7 +372,7 @@ sub store_export {
                 resource_id => $lookup{resource_id},
                 biblio_id => $lookup{biblio_id},
                 message => $message
-            }
+            })
         );
 
     } catch {
@@ -412,12 +412,12 @@ sub summary {
 
         return $c->render(
             status => 200,
-            openapi => {
+            openapi => _defined_response({
                 biblio_id => $biblio_id + 0,
                 work      => $data->{work},
                 instances => $data->{instances},
                 agents    => $data->{agents},
-            }
+            })
         );
 
     } catch {
@@ -427,6 +427,16 @@ sub summary {
             openapi => { error => "Internal server error: $_" }
         );
     };
+}
+
+# Mojolicious::Plugin::OpenAPI validates every response against openapi.yaml,
+# and a JSON null fails fields declared as e.g. "type: integer". Optional
+# fields the controller cannot fill (resource_id when method=biblio_id,
+# biblionumber when method=marc/text, storage when not saving) are therefore
+# omitted rather than returned as undef.
+sub _defined_response {
+    my ($hash) = @_;
+    return { map { $_ => $hash->{$_} } grep { defined $hash->{$_} } keys %$hash };
 }
 
 1;
