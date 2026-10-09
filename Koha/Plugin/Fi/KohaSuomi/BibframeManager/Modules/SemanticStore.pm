@@ -347,8 +347,18 @@ sub store_bibframe_rdf {
         }
     }
 
+    # marc2bibframe2 represents the MARC 240 original title as a bf:Hub node
+    # that the Work points at with bf:expressionOf. A Hub has no place in the
+    # canonical Work -> Instance -> Item model, so its title is kept as a
+    # property of the Work instead, the same way the legacy MARC path keeps
+    # 130/240 in a work property.
+    my $hub_meta = $self->_hub_metadata($triples, \%types_by_subject);
+
     my %resources_to_insert;
     for my $uri (keys %types_by_subject) {
+        # The Hub is not stored, so an agent that only the Hub references would
+        # be left behind as an unlinked duplicate.
+        next if $hub_meta->{orphan_agents}{$uri};
         my $shared = defined($biblio_id)
             && defined($record_base_uri)
             && index($uri, $record_base_uri) != 0;
@@ -415,6 +425,18 @@ sub store_bibframe_rdf {
             value_lang => $triple->{lang},
             value_datatype => $triple->{datatype},
             sequence => $sequence,
+        };
+    }
+
+    for my $work_uri (sort keys %{ $hub_meta->{original_titles} }) {
+        next unless exists $resources_to_insert{$work_uri};
+        push @properties_to_insert, {
+            resource_uri => $work_uri,
+            property_uri => 'http://urn.fi/URN:NBN:fi:schema:bffi:originalTitle',
+            property_key => 'originalTitle',
+            value_type   => 'literal',
+            value_text   => $hub_meta->{original_titles}{$work_uri},
+            sequence     => $sequence{$work_uri}++,
         };
     }
 
@@ -498,6 +520,76 @@ sub _marc_key_relationship_type {
     return 'creator'     if $tag eq '100' || $tag eq '110' || $tag eq '111';
     return 'contributor' if $tag eq '700' || $tag eq '710' || $tag eq '711';
     return undef;
+}
+
+=head2 _hub_metadata
+
+Extracts what a bf:Hub node contributes before it is discarded: the original
+title (MARC 240) of the Work that points at it, and the agents referenced only
+by such a Hub. Returns C<< { original_titles => {}, orphan_agents => {} } >>.
+
+=cut
+
+sub _hub_metadata {
+    my ($self, $triples, $types_by_subject) = @_;
+
+    my (%hubs, %titles, %hub_agents, %referenced_elsewhere);
+
+    for my $triple (@{ $triples || [] }) {
+        my $subject = $triple->{subject};
+        next unless defined $subject && !ref $subject;
+
+        my $predicate = $triple->{predicate} || '';
+        my $object = $triple->{object};
+        next unless defined $object && !ref $object;
+        my $object_type = $triple->{object_type} || 'literal';
+
+        my ($localname) = $predicate =~ m{(?:^|:|/|#)([^/:]+)$};
+        next unless defined $localname;
+
+        if ($self->_is_rdf_type($predicate) && $object_type eq 'uri') {
+            $hubs{$subject} = 1 if $object =~ m{/Hub$};
+            next;
+        }
+
+        next if $hubs{$subject};
+        $referenced_elsewhere{$object} = 1 if $object_type eq 'uri';
+    }
+
+    for my $triple (@{ $triples || [] }) {
+        my $subject = $triple->{subject};
+        next unless $hubs{$subject};
+
+        my $predicate = $triple->{predicate} || '';
+        my $object = $triple->{object};
+        next unless defined $object && !ref $object;
+        my ($localname) = $predicate =~ m{(?:^|:|/|#)([^/:]+)$};
+        next unless defined $localname;
+
+        if ($localname eq 'mainTitle' && ($triple->{object_type} || '') eq 'literal') {
+            $titles{$subject} = $object unless defined $titles{$subject};
+        } elsif ($localname eq 'agent' && ($triple->{object_type} || '') eq 'uri') {
+            $hub_agents{$object} = 1;
+        }
+    }
+
+    # A Work reaches its Hub through bf:expressionOf.
+    my %original_titles;
+    for my $triple (@{ $triples || [] }) {
+        my $subject = $triple->{subject};
+        next unless defined $subject && $types_by_subject->{$subject};
+        next unless ($types_by_subject->{$subject}{type} || '') eq 'Work';
+        my $object = $triple->{object};
+        next unless defined $object && $hubs{$object} && defined $titles{$object};
+        $original_titles{$subject} = $titles{$object} unless defined $original_titles{$subject};
+    }
+
+    my %orphan_agents = map { $_ => 1 } grep { !$referenced_elsewhere{$_} } keys %hub_agents;
+
+    return {
+        original_titles => \%original_titles,
+        orphan_agents   => \%orphan_agents,
+    };
 }
 
 =head2 _identifiers_from_triples

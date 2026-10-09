@@ -297,6 +297,13 @@
             work:
               type: object
               description: Work summary row (record_work_summary) plus resource uri
+              properties:
+                title:
+                  type: string
+                  description: Title of the work as catalogued
+                original_title:
+                  type: string
+                  description: Title of the original work (MARC 240) for a translated record
             instances:
               type: array
               description: Instance summary rows (record_instance_summary) plus uri

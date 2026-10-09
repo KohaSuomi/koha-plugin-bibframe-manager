@@ -167,10 +167,10 @@ sub _rebuild_work_summary {
 
     my $insert = $dbh->prepare(
         "INSERT INTO record_work_summary
-             (resource_id, biblio_id, title, title_normalized, language,
-              work_type, original_language, original_resource_id, original_pending,
-              contributor_count, subject_count, instance_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+             (resource_id, biblio_id, title, title_normalized, original_title,
+              language, work_type, original_language, original_resource_id,
+              original_pending, contributor_count, subject_count, instance_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
 
     my $count = 0;
@@ -209,6 +209,7 @@ sub _rebuild_work_summary {
             $work->{biblio_id},
             $title,
             $self->_normalize_title($title),
+            $props->{originalTitle}->[0],
             $language,
             $work_type,
             $original_language,

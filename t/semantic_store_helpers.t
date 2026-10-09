@@ -91,4 +91,27 @@ is($store->_marc_key_relationship_type(undef), undef, 'undef marcKey -> undef');
         'uri rdf:value does not start an identifier');
 }
 
+# _hub_metadata keeps the bf:Hub original title (MARC 240) and reports the
+# agents that only the discarded Hub referenced.
+{
+    my $triples = [
+        { subject => 'work',  predicate => 'rdf:type',   object => 'http://id.loc.gov/ontologies/bibframe/Work',       object_type => 'uri' },
+        { subject => 'work',  predicate => 'bf:expressionOf', object => 'hub',                                object_type => 'uri' },
+        { subject => 'hub',   predicate => 'rdf:type',   object => 'http://id.loc.gov/ontologies/bibframe/Hub',        object_type => 'uri' },
+        { subject => 'hub',   predicate => 'bf:mainTitle', object => 'The midnight library.',                   object_type => 'literal' },
+        { subject => 'hub',   predicate => 'bf:agent',   object => 'hubagent',                                   object_type => 'uri' },
+        { subject => 'hubagent', predicate => 'rdf:type', object => 'http://id.loc.gov/ontologies/bibframe/Person',   object_type => 'uri' },
+        { subject => 'work',  predicate => 'bf:agent',   object => 'workagent',                                   object_type => 'uri' },
+    ];
+    my $types = {
+        work => { type => 'Work' },
+        hubagent => { type => 'Person' },
+    };
+    my $got = $store->_hub_metadata($triples, $types);
+    is($got->{original_titles}{work}, 'The midnight library.',
+        'hub mainTitle becomes the work original title');
+    ok($got->{orphan_agents}{hubagent}, 'agent referenced only by the hub is orphaned');
+    ok(!$got->{orphan_agents}{workagent}, 'agent referenced by the work is kept');
+}
+
 done_testing;

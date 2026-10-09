@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS record_work_summary (
 
     title           VARCHAR(1024),
     title_normalized VARCHAR(1024),
+    -- Title of the original work (MARC 240) for a translated record
+    original_title  VARCHAR(1024),
     language        VARCHAR(32),
     work_type       VARCHAR(128),
 

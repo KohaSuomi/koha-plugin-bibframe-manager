@@ -42,7 +42,8 @@ Returns a hashref with the Work, Instances and Agents for a biblio, sourced
 from the summary tables:
 
     {
-        work       => { id, resource_id, title, title_normalized, language,
+        work       => { id, resource_id, title, title_normalized,
+                        original_title, language,
                         work_type, original_language, original_resource_id,
                         original_external_id, original_external_source,
                         contributor_count, subject_count, instance_count,

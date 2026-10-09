@@ -111,6 +111,7 @@ sub _ensure_columns {
     my @columns = (
         [ 'record_links', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP' ],
         [ 'record_instance_summary', 'identifiers', 'JSON' ],
+        [ 'record_work_summary', 'original_title', 'VARCHAR(1024)' ],
     );
 
     for my $c (@columns) {
