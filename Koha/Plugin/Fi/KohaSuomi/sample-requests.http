@@ -41,6 +41,36 @@ Content-Type: application/json
   "base_uri": "http://urn.fi/URN:NBN:fi:bib:"
 }
 
+### BIBFRAME: export stored record as BFFI 4-level WEMI (Turtle)
+# @name bibframe_store_bffi_turtle
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/store HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "biblio_id",
+  "biblio_id": 2,
+  "standard": "bffi",
+  "format": "turtle",
+  "base_uri": "http://urn.fi/URN:NBN:fi:bib:"
+}
+
+### BIBFRAME: export stored record as BFFI 4-level WEMI (RDF/XML)
+# @name bibframe_store_bffi_rdfxml
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/store HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "biblio_id",
+  "biblio_id": 2,
+  "standard": "bffi",
+  "format": "rdf-xml",
+  "base_uri": "http://urn.fi/URN:NBN:fi:bib:"
+}
+
 ### BIBFRAME: export stored record as RDF/XML
 # @name bibframe_store_rdfxml
 POST {{baseUrl}}/contrib/kohasuomi/bibframe/store HTTP/1.1
@@ -69,6 +99,21 @@ Content-Type: application/json
   "format": "turtle"
 }
 
+### BIBFRAME: export a stored resource by resource_id as BFFI
+# @name bibframe_store_resource_bffi
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/store HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "resource_id",
+  "resource_id": 1,
+  "standard": "bffi",
+  "format": "json",
+  "base_uri": "http://urn.fi/URN:NBN:fi:bib:"
+}
+
 ### BIBFRAME: read stored summary (work / instances / agents)
 # @name bibframe_summary
 GET {{baseUrl}}/contrib/kohasuomi/bibframe/summary?biblio_id=2 HTTP/1.1
@@ -88,4 +133,51 @@ Content-Type: application/json
   "standard": "bibframe2",
   "format": "json",
   "save_to_db": true
+}
+
+### BIBFRAME: convert a MARC record and return BFFI 4-level WEMI (not stored)
+# Runs the XSLT and projects the result to BFFI without touching the store.
+# @name bibframe_convert_bffi
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/convert HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "biblio",
+  "biblionumber": 2,
+  "standard": "bffi",
+  "format": "json",
+  "save_to_db": false
+}
+
+### BIBFRAME: convert and store a MARC record as LoC BIBFRAME, then export BFFI
+# The store keeps the canonical LoC 3-level graph; BFFI is derived on export.
+# @name bibframe_convert_store_then_export_bffi
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/convert HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "biblio",
+  "biblionumber": 2,
+  "standard": "bibframe2",
+  "format": "json",
+  "save_to_db": true
+}
+
+### BIBFRAME: export the record just stored as BFFI 4-level WEMI
+# @name bibframe_export_stored_bffi
+POST {{baseUrl}}/contrib/kohasuomi/bibframe/store HTTP/1.1
+Authorization: Bearer {{token}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "method": "biblio_id",
+  "biblio_id": 2,
+  "standard": "bffi",
+  "format": "json",
+  "base_uri": "http://urn.fi/URN:NBN:fi:bib:"
 }
