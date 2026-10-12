@@ -8,7 +8,7 @@ use Search::Elasticsearch;
 use C4::Context;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Esmapping;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BibframeGenerator;
-use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIProjector;
 
 =head1 NAME
 
@@ -455,8 +455,10 @@ sub _derive_expressions {
     my $loc_triples = $gen->generate_triples(biblio_id => $biblio_id);
     return [] unless $loc_triples && @$loc_triples;
 
-    my $converter = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe->new();
-    my $wemi = $converter->derive_wemi_from_loc($loc_triples, base_uri => 'http://urn.fi/URN:NBN:fi:bib:');
+    my $converter = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIProjector->new(
+        base_uri => 'http://urn.fi/URN:NBN:fi:bib:',
+    );
+    my $wemi = $converter->project($loc_triples);
     return [] unless $wemi && @$wemi;
 
     my $bffi_ns = 'http://urn.fi/URN:NBN:fi:schema:bffi:';

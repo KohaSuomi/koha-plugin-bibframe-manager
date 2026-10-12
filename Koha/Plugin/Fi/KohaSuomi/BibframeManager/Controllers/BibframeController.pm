@@ -6,6 +6,7 @@ use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BibframeGenerator;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIGenerator;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIProjector;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryReader;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SemanticStore;
 use Koha::Biblios;
@@ -222,10 +223,10 @@ sub convert {
         }
         $full_base_uri =~ s{/?$}{/};
 
-        my $triples = $converter->derive_wemi_from_loc(
-            $loc_triples,
-            base_uri => $full_base_uri
+        my $projector = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIProjector->new(
+            base_uri => $full_base_uri,
         );
+        my $triples = $projector->project($loc_triples, base_uri => $full_base_uri);
 
         unless ($triples && @$triples) {
             return $c->render(

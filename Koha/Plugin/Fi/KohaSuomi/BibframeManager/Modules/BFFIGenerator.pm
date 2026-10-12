@@ -4,8 +4,8 @@ use strict;
 use warnings;
 use utf8;
 use Try::Tiny;
-use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BibframeGenerator;
+use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIProjector;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Database;
 
 =head1 NAME
@@ -22,8 +22,9 @@ Expression level is NOT persisted; it is derived on demand, only when a BFFI
 export is requested. This module:
 
   1. Reads the stored LoC 3-level graph via BibframeGenerator.
-  2. Derives the 4-level WEMI via Bibframe::derive_wemi_from_loc.
-  3. Serializes the derived BFFI graph.
+  2. Projects the 4-level WEMI, closed-namespace BFFI graph via
+     BFFIProjector (ontology-driven rename from config/bffi_rename.yaml).
+  3. Serializes the projected BFFI graph.
 
 =cut
 
@@ -53,10 +54,16 @@ sub generate_triples {
 
     return [] unless $loc_triples && @$loc_triples;
 
-    my $converter = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::Bibframe->new();
     my $base_uri = $args{base_uri} || 'http://urn.fi/URN:NBN:fi:bib:';
 
-    return $converter->derive_wemi_from_loc($loc_triples, base_uri => $base_uri);
+    my $projector = Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIProjector->new(
+        base_uri => $base_uri,
+    );
+    my $triples = $projector->project($loc_triples, base_uri => $base_uri);
+
+    $self->{projection_stats} = $projector->stats if $self;
+
+    return $triples;
 }
 
 =head2 generate

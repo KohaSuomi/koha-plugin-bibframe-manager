@@ -1,0 +1,437 @@
+# GENERATED FILE - do not edit by hand.
+#
+# BIBFRAME -> BFFI rename table, derived from the vendored BFFI ontology
+# (config/lkd.rdf). Regenerate with:
+#
+#     perl tools/generate_bffi_rename.pl
+#
+# `classes` / `properties` are clean equivalences (owl:equivalentClass /
+# owl:equivalentProperty). `subclasses` / `subproperties` are narrower
+# mappings declared via rdfs:subClassOf / rdfs:subPropertyOf and are applied
+# only when no clean mapping matches. `value_vocabularies` lists the MTS value
+# vocabulary terms a property is associated with (bffi-meta:relatedValueVocabulary).
+---
+classes:
+  bf:AccessPolicy: bffi:AccessPolicy
+  bf:AcquisitionSource: bffi:AcquisitionSource
+  bf:AdminMetadata: bffi:AdminMetadata
+  bf:Agent: bffi:Agent
+  bf:AppliedMaterial: bffi:AppliedMaterial
+  bf:Archival: bffi:Archival
+  bf:Arrangement: bffi:Arrangement
+  bf:AspectRatio: bffi:AspectRatio
+  bf:BaseMaterial: bffi:BaseMaterial
+  bf:Binding: bffi:Binding
+  bf:BookFormat: bffi:BookFormat
+  bf:BroadcastStandard: bffi:BroadcastStandard
+  bf:Capture: bffi:Capture
+  bf:CaptureStorage: bffi:CaptureStorage
+  bf:Carrier: bffi:Carrier
+  bf:Cartographic: bffi:Cartographic
+  bf:CartographicDataType: bffi:CartographicDataType
+  bf:CartographicObjectType: bffi:CartographicObjectType
+  bf:Chronology: bffi:Chronology
+  bf:Classification: bffi:Classification
+  bf:ClassificationDdc: bffi:ClassificationDdc
+  bf:ClassificationLcc: bffi:ClassificationLcc
+  bf:ClassificationNal: bffi:ClassificationNal
+  bf:ClassificationNlm: bffi:ClassificationNlm
+  bf:ClassificationUdc: bffi:ClassificationUdc
+  bf:CollectionArrangement: bffi:CollectionArrangement
+  bf:ColorContent: bffi:ColorContent
+  bf:Content: bffi:Content
+  bf:ContentAccessibility: bffi:ContentAccessibility
+  bf:Contribution: bffi:Contribution
+  bf:CopyrightRegistration: bffi:CopyrightRegistration
+  bf:CoverArt: bffi:CoverArt
+  bf:Dataset: bffi:Dataset
+  bf:DescriptionAuthentication: bffi:DescriptionAuthentication
+  bf:DescriptionConventions: bffi:DescriptionConventions
+  bf:DescriptionLevel: bffi:DescriptionLevel
+  bf:DigitalCharacteristic: bffi:DigitalCharacteristic
+  bf:Dissertation: bffi:Dissertation
+  bf:Distribution: bffi:Distribution
+  bf:Electronic: bffi:Electronic
+  bf:Emulsion: bffi:Emulsion
+  bf:EncodedBitrate: bffi:EncodedBitrate
+  bf:EncodingFormat: bffi:EncodingFormat
+  bf:Enumeration: bffi:Enumeration
+  bf:EnumerationAndChronology: bffi:EnumerationAndChronology
+  bf:Event: bffi:Event
+  bf:Extent: bffi:Extent
+  bf:Family: bffi:Family
+  bf:FileSize: bffi:FileSize
+  bf:FileType: bffi:FileType
+  bf:FontSize: bffi:FontSize
+  bf:Frequency: bffi:Frequency
+  bf:Generation: bffi:Generation
+  bf:GenerationProcess: bffi:GenerationProcess
+  bf:GenreForm: bffi:GenreForm
+  bf:GeographicCoverage: bffi:GeographicCoverage
+  bf:GrooveCharacteristic: bffi:GrooveCharacteristic
+  bf:Identifier: bffi:Identifier
+  bf:Illustration: bffi:Illustration
+  bf:ImmediateAcquisition: bffi:ImmediateAcquisition
+  bf:Instance: bffi:Manifestation
+  bf:Integrating: bffi:Integrating
+  bf:IntendedAudience: bffi:IntendedAudience
+  bf:Item: bffi:Item
+  bf:Jurisdiction: bffi:Jurisdiction
+  bf:Kit: bffi:Kit
+  bf:Language: bffi:Language
+  bf:Layout: bffi:Layout
+  bf:Local: bffi:Local
+  bf:Manufacture: bffi:Manufacture
+  bf:Manuscript: bffi:Manuscript
+  bf:Material: bffi:Material
+  bf:Media: bffi:Media
+  bf:Meeting: bffi:Meeting
+  bf:Microform: bffi:Microform
+  bf:MixedMaterial: bffi:MixedMaterial
+  bf:Modification: bffi:Modification
+  bf:Mount: bffi:Mount
+  bf:MovementNotation: bffi:MovementNotation
+  bf:Multimedia: bffi:Multimedia
+  bf:MusicFormat: bffi:MusicFormat
+  bf:MusicMedium: bffi:MusicMedium
+  bf:MusicNotation: bffi:MusicNotation
+  bf:NotatedMovement: bffi:NotatedMovement
+  bf:NotatedMusic: bffi:NotatedMusic
+  bf:Notation: bffi:Notation
+  bf:Note: bffi:Note
+  bf:Object: bffi:Object
+  bf:ObjectCount: bffi:ObjectCount
+  bf:Organization: bffi:Organization
+  bf:Person: bffi:Person
+  bf:Place: bffi:Place
+  bf:PlaybackChannels: bffi:PlaybackChannels
+  bf:PlaybackCharacteristic: bffi:PlaybackCharacteristic
+  bf:PlayingSpeed: bffi:PlayingSpeed
+  bf:Polarity: bffi:Polarity
+  bf:PresentationFormat: bffi:PresentationFormat
+  bf:PrimaryContribution: bffi:PrimaryContribution
+  bf:Print: bffi:Print
+  bf:Production: bffi:Production
+  bf:ProductionMethod: bffi:ProductionMethod
+  bf:Projection: bffi:Projection
+  bf:ProjectionCharacteristic: bffi:ProjectionCharacteristic
+  bf:ProjectionSpeed: bffi:ProjectionSpeed
+  bf:ProvisionActivity: bffi:ProvisionActivity
+  bf:PubFrequency: bffi:PubFrequency
+  bf:Publication: bffi:Publication
+  bf:RecordingMedium: bffi:RecordingMedium
+  bf:RecordingMethod: bffi:RecordingMethod
+  bf:ReductionRatio: bffi:ReductionRatio
+  bf:RegionalEncoding: bffi:RegionalEncoding
+  bf:Relation: bffi:Relation
+  bf:Relationship: bffi:Relationship
+  bf:Relief: bffi:Relief
+  bf:Resolution: bffi:Resolution
+  bf:RetentionPolicy: bffi:RetentionPolicy
+  bf:Role: bffi:Role
+  bf:Scale: bffi:Scale
+  bf:Script: bffi:Script
+  bf:ShelfMark: bffi:ShelfMark
+  bf:SoundCharacteristic: bffi:SoundCharacteristic
+  bf:SoundContent: bffi:SoundContent
+  bf:Source: bffi:Source
+  bf:Status: bffi:Status
+  bf:StillImage: bffi:StillImage
+  bf:Sublocation: bffi:Sublocation
+  bf:Summary: bffi:Summary
+  bf:SupplementaryContent: bffi:SupplementaryContent
+  bf:SystemRequirement: bffi:SystemRequirement
+  bf:TableOfContents: bffi:TableOfContents
+  bf:Tactile: bffi:Tactile
+  bf:TactileNotation: bffi:TactileNotation
+  bf:TapeConfig: bffi:TapeConfig
+  bf:Temporal: bffi:Temporal
+  bf:Text: bffi:Text
+  bf:Title: bffi:Title
+  bf:Topic: bffi:Topic
+  bf:TrackConfig: bffi:TrackConfig
+  bf:Unit: bffi:Unit
+  bf:UsageAndAccessPolicy: bffi:UsageAndAccessPolicy
+  bf:UsePolicy: bffi:UsePolicy
+  bf:VideoCharacteristic: bffi:VideoCharacteristic
+  bf:VideoFormat: bffi:VideoFormat
+  bf:Work: bffi:BibframeWork
+  bflc:AppliesTo: bffi:AppliesTo
+  bflc:CreatorCharacteristic: bffi:CreatorCharacteristic
+  bflc:DemographicGroup: bffi:DemographicGroup
+  bflc:EncodingLevel: bffi:EncodingLevel
+  bflc:GovernmentPubType: bffi:GovernmentPubType
+  bflc:GrooveCutting: bffi:GrooveCutting
+  bflc:MachineModel: bffi:MachineModel
+  bflc:MetadataLicensor: bffi:MetadataLicensor
+  bflc:OperatingSystem: bffi:OperatingSystem
+  bflc:ProgrammingLanguage: bffi:ProgrammingLanguage
+  bflc:SerialPubType: bffi:SerialPubType
+  bflc:Uncontrolled: bffi:Uncontrolled
+namespaces:
+  bf: http://id.loc.gov/ontologies/bibframe/
+  bffi: 'http://urn.fi/URN:NBN:fi:schema:bffi:'
+  bflc: http://id.loc.gov/ontologies/bflc/
+properties:
+  bf:acquisitionSource: bffi:acquisitionSource
+  bf:acquisitionTerms: bffi:acquisitionTerms
+  bf:adminMetadata: bffi:adminMetadata
+  bf:adminMetadataFor: bffi:adminMetadataFor
+  bf:appliedMaterial: bffi:appliedMaterial
+  bf:ascensionAndDeclination: bffi:ascensionAndDeclination
+  bf:assigner: bffi:assigner
+  bf:associatedResource: bffi:associatedResource
+  bf:awards: bffi:awards
+  bf:baseMaterial: bffi:baseMaterial
+  bf:binding: bffi:binding
+  bf:bookFormat: bffi:bookFormat
+  bf:cartographicAttributes: bffi:cartographicAttributes
+  bf:changeDate: bffi:changeDate
+  bf:classification: bffi:classification
+  bf:classificationPortion: bffi:classificationPortion
+  bf:code: bffi:code
+  bf:collectionArrangement: bffi:collectionArrangement
+  bf:collectionArrangementOf: bffi:collectionArrangementOf
+  bf:collectionOrganization: bffi:collectionOrganization
+  bf:colorContent: bffi:colorContent
+  bf:contentAccessibility: bffi:contentAccessibility
+  bf:contribution: bffi:contribution
+  bf:coordinates: bffi:coordinates
+  bf:copyrightDate: bffi:copyrightDate
+  bf:copyrightRegistration: bffi:copyrightRegistration
+  bf:count: bffi:count
+  bf:coverArt: bffi:coverArt
+  bf:creationDate: bffi:creationDate
+  bf:custodialHistory: bffi:custodialHistory
+  bf:derivedFrom: bffi:derivedFrom
+  bf:descriptionAuthentication: bffi:descriptionAuthentication
+  bf:descriptionConventions: bffi:descriptionConventions
+  bf:descriptionLanguage: bffi:descriptionLanguage
+  bf:descriptionLevel: bffi:descriptionLevel
+  bf:descriptionModifier: bffi:descriptionModifier
+  bf:digitalCharacteristic: bffi:digitalCharacteristic
+  bf:dimensions: bffi:dimensions
+  bf:dissertation: bffi:dissertation
+  bf:distributionStatement: bffi:distributionStatement
+  bf:edition: bffi:edition
+  bf:editionEnumeration: bffi:editionEnumeration
+  bf:editionStatement: bffi:editionStatement
+  bf:electronicLocator: bffi:electronicLocator
+  bf:emulsion: bffi:emulsion
+  bf:enumerationAndChronology: bffi:enumerationAndChronology
+  bf:equinox: bffi:equinox
+  bf:exclusionGRing: bffi:exclusionGRing
+  bf:expressionOf: bffi:expressionOf
+  bf:extent: bffi:extent
+  bf:firstIssue: bffi:firstIssue
+  bf:fontSize: bffi:fontSize
+  bf:frequency: bffi:frequency
+  bf:generation: bffi:generation
+  bf:generationDate: bffi:generationDate
+  bf:generationProcess: bffi:generationProcess
+  bf:genreForm: bffi:genreForm
+  bf:geographicCoverage: bffi:geographicCoverage
+  bf:hasItem: bffi:hasItem
+  bf:heldBy: bffi:heldBy
+  bf:hierarchicalLevel: bffi:hierarchicalLevel
+  bf:historyOfWork: bffi:historyOfWork
+  bf:identifiedBy: bffi:identifiedBy
+  bf:identifies: bffi:identifies
+  bf:illustrativeContent: bffi:illustrativeContent
+  bf:immediateAcquisition: bffi:immediateAcquisition
+  bf:intendedAudience: bffi:intendedAudience
+  bf:itemOf: bffi:itemOf
+  bf:itemPortion: bffi:itemPortion
+  bf:language: bffi:language
+  bf:lastIssue: bffi:lastIssue
+  bf:layout: bffi:layout
+  bf:legalDate: bffi:legalDate
+  bf:mainTitle: bffi:mainTitle
+  bf:manufactureStatement: bffi:manufactureStatement
+  bf:material: bffi:material
+  bf:media: bffi:media
+  bf:mount: bffi:mount
+  bf:musicFormat: bffi:musicFormat
+  bf:musicKey: bffi:musicKey
+  bf:musicOpusNumber: bffi:musicOpusNumber
+  bf:musicSerialNumber: bffi:musicSerialNumber
+  bf:musicThematicNumber: bffi:musicThematicNumber
+  bf:natureOfContent: bffi:natureOfContent
+  bf:notation: bffi:notation
+  bf:originDate: bffi:originDate
+  bf:originPlace: bffi:originPlace
+  bf:outerGRing: bffi:outerGRing
+  bf:part: bffi:part
+  bf:partName: bffi:partName
+  bf:partNumber: bffi:partNumber
+  bf:pattern: bffi:pattern
+  bf:physicalLocation: bffi:physicalLocation
+  bf:polarity: bffi:polarity
+  bf:preferredCitation: bffi:preferredCitation
+  bf:productionMethod: bffi:productionMethod
+  bf:productionStatement: bffi:productionStatement
+  bf:projectionCharacteristic: bffi:projectionCharacteristic
+  bf:provisionActivity: bffi:provisionActivity
+  bf:pubFrequency: bffi:pubFrequency
+  bf:publicationStatement: bffi:publicationStatement
+  bf:qualifier: bffi:qualifier
+  bf:reductionRatio: bffi:reductionRatio
+  bf:relatedTo: bffi:relatedTo
+  bf:relation: bffi:relation
+  bf:relationship: bffi:relationship
+  bf:relief: bffi:relief
+  bf:responsibilityStatement: bffi:responsibilityStatement
+  bf:role: bffi:role
+  bf:scale: bffi:scale
+  bf:schedulePart: bffi:schedulePart
+  bf:seriesEnumeration: bffi:seriesEnumeration
+  bf:seriesStatement: bffi:seriesStatement
+  bf:shelfMark: bffi:shelfMark
+  bf:soundCharacteristic: bffi:soundCharacteristic
+  bf:soundContent: bffi:soundContent
+  bf:spanEnd: bffi:spanEnd
+  bf:status: bffi:status
+  bf:subject: bffi:subject
+  bf:subjectOf: bffi:subjectOf
+  bf:sublocation: bffi:sublocation
+  bf:subtitle: bffi:subtitle
+  bf:summary: bffi:summary
+  bf:supplementaryContent: bffi:supplementaryContent
+  bf:systemRequirement: bffi:systemRequirement
+  bf:table: bffi:table
+  bf:tableOfContents: bffi:tableOfContents
+  bf:tableSeq: bffi:tableSeq
+  bf:temporalCoverage: bffi:temporalCoverage
+  bf:title: bffi:title
+  bf:titleOf: bffi:titleOf
+  bf:unit: bffi:unit
+  bf:validDate: bffi:validDate
+  bf:version: bffi:version
+  bf:videoCharacteristic: bffi:videoCharacteristic
+  bflc:aap: bffi:aap
+  bflc:applicableInstitution: bffi:applicableInstitution
+  bflc:appliesTo: bffi:appliesTo
+  bflc:catalogerId: bffi:catalogerId
+  bflc:creatorCharacteristic: bffi:creatorCharacteristic
+  bflc:demographicGroup: bffi:demographicGroup
+  bflc:encodingLevel: bffi:encodingLevel
+  bflc:governmentPubType: bffi:governmentPubType
+  bflc:marcKey: bffi:marcKey
+  bflc:metadataLicensor: bffi:metadataLicensor
+  bflc:nonSortNum: bffi:nonSortNum
+  bflc:readMarc382: bffi:readMarc382
+  bflc:serialPubType: bffi:serialPubType
+  bflc:simpleAgent: bffi:simpleAgent
+  bflc:simpleDate: bffi:simpleDate
+  bflc:simplePlace: bffi:simplePlace
+source: config/lkd.rdf
+subclasses: {}
+subproperties:
+  bf:agent: bffi:agent
+  bf:aspectRatio: bffi:aspectRatio
+  bf:capture: bffi:capture
+  bf:carrier: bffi:carrier
+  bf:content: bffi:content
+  bf:credits: bffi:credits
+  bf:date: bffi:date
+  bf:duration: bffi:duration
+  bf:musicMedium: bffi:musicMedium
+  bf:note: bffi:note
+  bf:place: bffi:place
+  bf:projection: bffi:cartographicProjection
+  bf:source: bffi:source
+  bf:usageAndAccessPolicy: bffi:usageAndAccessPolicy
+value_vocabularies:
+  bffi:AcquisitionSource:
+  - http://urn.fi/URN:NBN:fi:au:mts:m110
+  bffi:AppliedMaterial:
+  - http://urn.fi/URN:NBN:fi:au:mts:m654
+  bffi:AspectRatio:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1988
+  bffi:BaseMaterial:
+  - http://urn.fi/URN:NBN:fi:au:mts:m654
+  bffi:Binding:
+  - http://urn.fi/URN:NBN:fi:au:mts:m4402
+  bffi:BookFormat:
+  - http://urn.fi/URN:NBN:fi:au:mts:m50
+  bffi:BroadcastStandard:
+  - http://urn.fi/URN:NBN:fi:au:mts:m682
+  bffi:CaptureStorage:
+  - http://urn.fi/URN:NBN:fi:au:mts:m4955
+  bffi:Carrier:
+  - http://urn.fi/URN:NBN:fi:au:mts:m180
+  bffi:CartographicDataType:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1509
+  bffi:ColorContent:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1668
+  bffi:EncodingFormat:
+  - http://urn.fi/URN:NBN:fi:au:mts:m88
+  bffi:Extent:
+  - http://urn.fi/URN:NBN:fi:au:mts:m8
+  bffi:FileType:
+  - http://urn.fi/URN:NBN:fi:au:mts:m537
+  bffi:FontSize:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1239
+  bffi:Frequency:
+  - http://urn.fi/URN:NBN:fi:au:mts:m291
+  bffi:Generation:
+  - http://urn.fi/URN:NBN:fi:au:mts:m245
+  bffi:GenreForm:
+  - http://urn.fi/URN:NBN:fi:au:mts:m5072
+  - http://urn.fi/URN:NBN:fi:au:mts:m991
+  bffi:Illustration:
+  - http://urn.fi/URN:NBN:fi:au:mts:m439
+  bffi:ImmediateAcquisition:
+  - http://urn.fi/URN:NBN:fi:au:mts:m5110
+  bffi:Layout:
+  - http://urn.fi/URN:NBN:fi:au:mts:m58
+  bffi:Material:
+  - http://urn.fi/URN:NBN:fi:au:mts:m654
+  bffi:Media:
+  - http://urn.fi/URN:NBN:fi:au:mts:m777
+  bffi:MovementNotation:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1981
+  bffi:MusicFormat:
+  - http://urn.fi/URN:NBN:fi:au:mts:m2002
+  bffi:MusicNotation:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1990
+  bffi:PlaybackChannels:
+  - http://urn.fi/URN:NBN:fi:au:mts:m4574
+  bffi:PlaybackCharacteristic:
+  - http://urn.fi/URN:NBN:fi:au:mts:m315
+  bffi:PlayingSpeed:
+  - http://urn.fi/URN:NBN:fi:au:mts:m4
+  bffi:Polarity:
+  - http://urn.fi/URN:NBN:fi:au:mts:m558
+  bffi:PresentationFormat:
+  - http://urn.fi/URN:NBN:fi:au:mts:m169
+  bffi:ProductionMethod:
+  - http://urn.fi/URN:NBN:fi:au:mts:m417
+  bffi:RecordingMedium:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1226
+  bffi:RecordingMethod:
+  - http://urn.fi/URN:NBN:fi:au:mts:m645
+  bffi:ReductionRatio:
+  - http://urn.fi/URN:NBN:fi:au:mts:m573
+  bffi:RegionalEncoding:
+  - http://urn.fi/URN:NBN:fi:au:mts:m4400
+  bffi:Role:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1157
+  - http://urn.fi/URN:NBN:fi:au:mts:m153
+  - http://urn.fi/URN:NBN:fi:au:mts:m34
+  - http://urn.fi/URN:NBN:fi:au:mts:m491
+  bffi:SoundContent:
+  - http://urn.fi/URN:NBN:fi:au:mts:m2207
+  bffi:SupplementaryContent:
+  - http://urn.fi/URN:NBN:fi:au:mts:m4849
+  bffi:TactileNotation:
+  - http://urn.fi/URN:NBN:fi:au:mts:m2003
+  bffi:TapeConfig:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1079
+  bffi:TrackConfig:
+  - http://urn.fi/URN:NBN:fi:au:mts:m1432
+  bffi:VideoFormat:
+  - http://urn.fi/URN:NBN:fi:au:mts:m191
+  bffi:content:
+  - http://urn.fi/URN:NBN:fi:au:mts:m346
+version: 1

@@ -135,7 +135,7 @@ sub _from_format_mappings {
               LIMIT 1"
         );
         $sth->execute($biblio_id);
-        $rows = $sth->fetchall_arrayref();
+        $rows = $sth->fetchall_arrayref({});
     } elsif ($resource_id) {
         my $sth = $dbh->prepare(
             "SELECT serialized_data
@@ -144,7 +144,7 @@ sub _from_format_mappings {
               LIMIT 1"
         );
         $sth->execute($resource_id);
-        $rows = $sth->fetchall_arrayref();
+        $rows = $sth->fetchall_arrayref({});
     }
 
     return undef unless $rows && @$rows;
