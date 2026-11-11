@@ -9,6 +9,8 @@ use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIGenerator;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::BFFIProjector;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SummaryReader;
 use Koha::Plugin::Fi::KohaSuomi::BibframeManager::Modules::SemanticStore;
+use C4::Context;
+use JSON;
 use Koha::Biblios;
 use MARC::Record;
 use MARC::File::USMARC;
@@ -423,6 +425,91 @@ sub summary {
 
     } catch {
         warn "Bibframe summary read error: $_";
+        return $c->render(
+            status => 500,
+            openapi => { error => "Internal server error: $_" }
+        );
+    };
+}
+
+=head2 match_candidates
+
+GET /api/v1/contrib/kohasuomi/bibframe/match_candidates
+
+Lists work_match_candidates (default status=pending) with resource labels and
+parsed evidence JSON for review.
+
+=cut
+
+sub match_candidates {
+    my $c = shift->openapi->valid_input or return;
+
+    return try {
+        my $status = $c->param('status') || 'pending';
+        my $limit  = $c->param('limit')  || 50;
+        my $offset = $c->param('offset') || 0;
+
+        my $dbh = C4::Context->dbh;
+
+        my $count_sth = $dbh->prepare(
+            "SELECT COUNT(*) FROM work_match_candidates WHERE status = ?"
+        );
+        $count_sth->execute($status);
+        my ($total) = $count_sth->fetchrow_array();
+
+        my $sth = $dbh->prepare(
+            "SELECT c.id, c.resource_a_id, c.resource_b_id, c.match_tier,
+                    c.relationship_type, c.work_type_a, c.work_type_b,
+                    c.match_evidence, c.status, c.review_note, c.reviewed_by,
+                    c.reviewed_at, c.created_at,
+                    a.label AS label_a, b.label AS label_b,
+                    a.uri AS uri_a, b.uri AS uri_b
+             FROM work_match_candidates c
+             JOIN record_resources a ON a.id = c.resource_a_id
+             JOIN record_resources b ON b.id = c.resource_b_id
+             WHERE c.status = ?
+             ORDER BY c.created_at DESC, c.id DESC
+             LIMIT ? OFFSET ?"
+        );
+        $sth->execute($status, $limit, $offset);
+
+        my @candidates;
+        while (my $row = $sth->fetchrow_hashref()) {
+            my $evidence = {};
+            if (defined $row->{match_evidence} && length $row->{match_evidence}) {
+                $evidence = eval { JSON::decode_json($row->{match_evidence}) } || {};
+            }
+            push @candidates, {
+                id                => $row->{id} + 0,
+                resource_a_id     => $row->{resource_a_id} + 0,
+                resource_b_id     => $row->{resource_b_id} + 0,
+                label_a           => $row->{label_a},
+                label_b           => $row->{label_b},
+                uri_a             => $row->{uri_a},
+                uri_b             => $row->{uri_b},
+                match_tier        => $row->{match_tier} + 0,
+                relationship_type => $row->{relationship_type},
+                work_type_a       => $row->{work_type_a},
+                work_type_b       => $row->{work_type_b},
+                status            => $row->{status},
+                review_note       => $row->{review_note},
+                reviewed_by       => $row->{reviewed_by},
+                reviewed_at       => $row->{reviewed_at},
+                created_at        => $row->{created_at},
+                evidence          => $evidence,
+            };
+        }
+
+        return $c->render(
+            status => 200,
+            openapi => {
+                total       => $total + 0,
+                candidates  => \@candidates,
+            }
+        );
+
+    } catch {
+        warn "Bibframe match_candidates error: $_";
         return $c->render(
             status => 500,
             openapi => { error => "Internal server error: $_" }

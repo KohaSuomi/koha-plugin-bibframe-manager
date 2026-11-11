@@ -27,6 +27,10 @@ export function usePluginApi() {
             };
             if (baseUri) payload.base_uri = baseUri;
             return await httpClient.post(url + '/bibframe/convert', payload);
+        },
+
+        async getMatchCandidates(status = 'pending', limit = 50, offset = 0) {
+            return await httpClient.get(url + '/bibframe/match_candidates', { status, limit, offset });
         }
     }
 }

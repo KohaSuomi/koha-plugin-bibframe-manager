@@ -345,6 +345,51 @@
                     type: string
                   role:
                     type: string
+
+/bibframe/match_candidates:
+  get:
+    x-mojo-to: "Fi::KohaSuomi::BibframeManager::Controllers::BibframeController#match_candidates"
+    operationId: getMatchCandidates
+    x-koha-authorization:
+      permissions:
+        plugins: tool
+    tags:
+      - bibframe
+    summary: List work match candidates for review
+    description: Reads work_match_candidates (default status=pending) with resource labels and evidence
+    produces:
+      - application/json
+    parameters:
+      - name: status
+        in: query
+        description: Candidate status filter
+        required: false
+        type: string
+        default: pending
+      - name: limit
+        in: query
+        description: Maximum number of candidates to return
+        required: false
+        type: integer
+        default: 50
+      - name: offset
+        in: query
+        description: Offset for paging
+        required: false
+        type: integer
+        default: 0
+    responses:
+      200:
+        description: Candidate list
+        schema:
+          type: object
+          properties:
+            total:
+              type: integer
+            candidates:
+              type: array
+              items:
+                type: object
       400:
         description: Bad request - biblio_id required
         schema:

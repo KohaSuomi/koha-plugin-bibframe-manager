@@ -1,11 +1,12 @@
 // Main App Component
-const { onMounted } = Vue;
+const { onMounted, ref } = Vue;
 import { useBibframeStore } from '../store/index.js';
 import { useEntityHelpers, useFileOperations } from '../composables/utils.js';
 import PropertySuggestions from './PropertySuggestions.js';
 import EntityNode from './EntityNode.js';
 import OutputViewer from './OutputViewer.js';
 import SearchRecords from './SearchRecords.js';
+import MatchCandidates from './MatchCandidates.js';
 
 export default {
     name: 'BibframeApp',
@@ -13,33 +14,40 @@ export default {
         PropertySuggestions,
         EntityNode,
         OutputViewer,
-        SearchRecords
+        SearchRecords,
+        MatchCandidates
     },
     setup() {
         const store = useBibframeStore();
         const { getEntityIcon } = useEntityHelpers();
-        
+        const activeTab = ref('builder');
+
         onMounted(() => {
             store.generateRecordId();
         });
-        
+
         return {
             store,
-            getEntityIcon
+            getEntityIcon,
+            activeTab
         };
     },
     template: `
         <div class="container-fluid mt-4">
-            <div class="row align-items-start">
-                <div class="col-md-7">
-                    <h2><i class="fas fa-project-diagram"></i> Bibframe Record Builder</h2>
-                    <p class="text-muted">Create Bibframe records from scratch using BFFI (four-level RDA) or BIBFRAME 2.0 (Work > Instance > Item)</p>
-                </div>
-                <div class="col-md-5">
-                    <SearchRecords />
-                </div>
-            </div>
-            <hr>
+            <ul class="nav nav-tabs mb-3">
+                <li class="nav-item">
+                    <button class="nav-link" :class="{ active: activeTab === 'builder' }"
+                            @click="activeTab = 'builder'">
+                        <i class="fas fa-edit"></i> Record builder
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" :class="{ active: activeTab === 'candidates' }"
+                            @click="activeTab = 'candidates'">
+                        <i class="fas fa-object-group"></i> Work match candidates
+                    </button>
+                </li>
+            </ul>
 
             <!-- Alerts -->
             <div class="row" v-if="store.error">
@@ -61,8 +69,18 @@ export default {
             </div>
 
             <!-- Main Content -->
-            <div class="row">
+            <div class="row" v-if="activeTab === 'builder'">
                 <div class="col-12">
+                    <div class="row align-items-start mb-3">
+                        <div class="col-md-7">
+                            <h2><i class="fas fa-project-diagram"></i> Bibframe Record Builder</h2>
+                            <p class="text-muted">Create Bibframe records from scratch using BFFI (four-level RDA) or BIBFRAME 2.0 (Work > Instance > Item)</p>
+                        </div>
+                        <div class="col-md-5">
+                            <SearchRecords />
+                        </div>
+                    </div>
+
                     <!-- Configuration Section -->
                     <div class="card mb-4">
                         <div class="card-body">
@@ -131,6 +149,12 @@ export default {
                     <!-- Output Viewer -->
                     <OutputViewer />
                 </div>
+            </div>
+
+            <div v-if="activeTab === 'candidates'">
+                <h2><i class="fas fa-object-group"></i> Work match candidates</h2>
+                <p class="text-muted">Review clustered Work pairs: auto-accepted and pending human review.</p>
+                <MatchCandidates />
             </div>
         </div>
     `
